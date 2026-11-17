@@ -34,6 +34,14 @@ function trace(commands) {
 }
 
 const variants = ['borderless', 'rectangle', 'rounded', 'oval', 'double-oval'];
+// Independent transcription of the supplier's clearly printed W × H sizes.
+const expectedSizes = {
+  borderless: { widthMm: 43, heightMm: 17, ratio: '43:17' },
+  rectangle: { widthMm: 55, heightMm: 22, ratio: '5:2' },
+  rounded: { widthMm: 55, heightMm: 22, ratio: '5:2' },
+  oval: { widthMm: 35, heightMm: 24, ratio: '35:24' },
+  'double-oval': { widthMm: 35, heightMm: 24, ratio: '35:24' },
+};
 const locations = [
   ['jakarta', 'JAKARTA'],
   ['hyphen', 'JAKARTA - INDONESIA'],
@@ -42,6 +50,69 @@ const locations = [
 ];
 const pathOutputs = new Set();
 const scalesByVariant = new Map();
+
+function near(actual, expected, message, tolerance = 1e-6) {
+  assert(Math.abs(actual - expected) < tolerance, `${message}: ${actual} ≠ ${expected}`);
+}
+
+function checkLayout(layout, name) {
+  const expected = expectedSizes[layout.variant];
+  assert.equal(layout.widthMm, expected.widthMm, `${name}: supplier width`);
+  assert.equal(layout.heightMm, expected.heightMm, `${name}: supplier height`);
+  near(layout.widthPx / layout.heightPx, expected.widthMm / expected.heightMm, `${name}: artboard ratio`);
+  const pointsByPath = new Map();
+  for (const path of layout.paths) {
+    const points = trace(path.commands);
+    pointsByPath.set(path.id, points);
+    for (const [x, y] of points) {
+      assert(Number.isFinite(x) && Number.isFinite(y));
+      assert(x >= -0.001 && x <= layout.widthPx + 0.001, `${name}: x clipping`);
+      assert(y >= -0.001 && y <= layout.heightPx + 0.001, `${name}: y clipping`);
+    }
+  }
+  for (const id of ['wordmark', 'location']) {
+    const path = layout.paths.find((p) => p.id === id);
+    const { bounds } = path;
+    const original = id === 'wordmark' ? geometry.wordmark : geometry.locations[layout.locationKey];
+    const scale = bounds.width / original.width;
+    near(bounds.height / original.height, scale, `${name}: ${id} must not be stretched`);
+    near(bounds.x + bounds.width / 2, layout.widthPx / 2, `${name}: ${id} must be centered`);
+    // Check the paths themselves, rather than trusting their advertised bounds.
+    assert.equal(path.commands.length, original.commands.length);
+    original.commands.forEach(([op, ...values], i) => {
+      assert.equal(path.commands[i][0], op);
+      values.forEach((value, j) => near(path.commands[i][j + 1], value * scale + (j % 2 ? bounds.y : bounds.x), `${name}: ${id} uniform glyph transform`));
+    });
+  }
+  const word = layout.paths.find((p) => p.id === 'wordmark').bounds;
+  const location = layout.paths.find((p) => p.id === 'location').bounds;
+  assert(location.y > word.y + word.height, `${name}: caption overlaps wordmark`);
+  if (layout.locationKey !== 'jakarta') {
+    const scale = location.height / geometry.locations[layout.locationKey].height;
+    const key = `${layout.variant}|${layout.borderMm}`;
+    const previous = scalesByVariant.get(key);
+    if (previous !== undefined) near(scale, previous, `${name}: dash comparisons must retain the same type size`, 1e-9);
+    scalesByVariant.set(key, scale);
+  }
+  if (layout.variant === 'borderless') return;
+  const outer = layout.paths.find((p) => p.id === 'border').bounds;
+  near(outer.width / outer.height, expected.widthMm / expected.heightMm, `${name}: outer frame ratio`);
+  const innerFrame = layout.paths.find((p) => p.id === 'inner-border') || layout.paths.find((p) => p.id === 'border');
+  const b = innerFrame.bounds;
+  const border = layout.borderMm * layout.widthPx / layout.widthMm;
+  const left = b.x + border, right = b.x + b.width - border;
+  const top = b.y + border, bottom = b.y + b.height - border;
+  for (const id of ['wordmark', 'location']) {
+    for (const [x, y] of pointsByPath.get(id)) {
+      assert(x > left && x < right && y > top && y < bottom, `${name}: lettering touches the frame`);
+      if (layout.variant === 'oval' || layout.variant === 'double-oval') {
+        const nx = (x - (left + right) / 2) / ((right - left) / 2);
+        const ny = (y - (top + bottom) / 2) / ((bottom - top) / 2);
+        assert(nx * nx + ny * ny < 1, `${name}: lettering crosses the inner ellipse`);
+      }
+    }
+  }
+}
 
 function pdfTitle(pdfText) {
   const hex = pdfText.match(/\/Title\s*<([0-9a-f]+)>/i);
@@ -57,39 +128,31 @@ function pdfTitle(pdfText) {
 }
 
 assert.deepEqual(geometry.locations.jakarta, geometry.location, 'Original caption geometry must remain available');
+for (const variant of variants) {
+  for (const [key, value] of Object.entries(expectedSizes[variant])) {
+    assert.equal(engine.STAMP_SPECS[variant][key], value, `${variant}: wrong catalogue ${key}`);
+  }
+}
 for (const [locationKey, caption] of locations) {
   assert.equal(geometry.locations[locationKey].text, caption, 'Wrong caption or dash code point');
   for (const variant of variants) {
     const name = `${locationKey}-${variant}`;
     const layout = engine.createLayout(geometry, { variant, locationKey });
     assert.equal(layout.locationText, caption);
-    assert(Number.isFinite(layout.widthMm) && layout.widthMm > 0);
-    assert(Number.isFinite(layout.heightMm) && layout.heightMm > 0);
-    for (const path of layout.paths) {
-      for (const [x, y] of trace(path.commands)) {
-        assert(Number.isFinite(x) && Number.isFinite(y));
-        assert(x >= -0.001 && x <= layout.widthPx + 0.001, `${name}: x clipping`);
-        assert(y >= -0.001 && y <= layout.heightPx + 0.001, `${name}: y clipping`);
-      }
-    }
-    for (const id of ['wordmark', 'location']) {
-      const { bounds } = layout.paths.find((p) => p.id === id);
-      assert(Math.abs(bounds.x + bounds.width / 2 - layout.widthPx / 2) < 1e-6, `${name}: text must be centered`);
-    }
-    const word = layout.paths.find((p) => p.id === 'wordmark').bounds;
-    const location = layout.paths.find((p) => p.id === 'location').bounds;
-    assert(location.y > word.y + word.height, `${name}: caption overlaps wordmark`);
-    if (locationKey !== 'jakarta') {
-      const scale = location.height / geometry.locations[locationKey].height;
-      const previous = scalesByVariant.get(variant);
-      if (previous !== undefined) assert(Math.abs(scale - previous) < 1e-9, `${name}: dash comparisons must retain the same type size`);
-      scalesByVariant.set(variant, scale);
+    checkLayout(layout, name);
+    // These controls change the available text area, so verify both extremes.
+    if (variant !== 'borderless') for (const borderMm of [0.25, 0.5]) {
+      checkLayout(engine.createLayout(geometry, { variant, locationKey, borderMm }), `${name}-${borderMm}mm`);
     }
     const svg = engine.createSvg(layout);
     assert(!/<(?:text|image)\b|@font-face|font-family|href=/i.test(svg), 'SVG must be independent path artwork');
     assert(!svg.includes('<rect'), 'Transparent SVG must not have a white background');
     assert(engine.createSvg(layout, { background: 'white' }).includes('<rect'));
     assert(svg.match(/<title\b[^>]*>(.*?)<\/title>/s)?.[1].includes(caption), `${name}: incorrect SVG title`);
+    const svgSize = svg.match(/<svg\b[^>]*\bwidth="([\d.]+)mm"\s+height="([\d.]+)mm"/);
+    assert(svgSize, `${name}: missing physical SVG dimensions`);
+    assert.equal(Number(svgSize[1]), expectedSizes[variant].widthMm);
+    assert.equal(Number(svgSize[2]), expectedSizes[variant].heightMm);
     const pdf = engine.createPdf(layout);
     const pdfText = new TextDecoder().decode(pdf);
     assert(pdfText.startsWith('%PDF-1.4'));
@@ -102,15 +165,24 @@ for (const [locationKey, caption] of locations) {
     pathOutputs.add(JSON.stringify(layout.paths.map((path) => path.commands)));
     await writeFile(join(directory, `${name}.svg`), svg);
     await writeFile(join(directory, `${name}.pdf`), pdf);
-    console.log(`${name}: ${layout.widthMm} × ${layout.heightMm.toFixed(2)} mm; outlined SVG/PDF verified`);
+    console.log(`${name}: ${layout.widthMm} × ${layout.heightMm} mm (${expectedSizes[variant].ratio}); outlined SVG/PDF verified`);
   }
 }
 assert.equal(pathOutputs.size, 20, 'All twenty designs must have distinct artwork, not only distinct labels');
-const rasterLayout = engine.createLayout(geometry, { variant: 'double-oval', locationKey: 'emDash' });
-for (const dpi of [300, 600, 1200]) {
-  const dimensions = engine.rasterDimensions(rasterLayout, dpi);
-  assert.equal(dimensions.width, Math.round(rasterLayout.widthMm / 25.4 * dpi));
-  assert.equal(dimensions.height, Math.round(rasterLayout.heightMm / 25.4 * dpi));
+// The three distinct catalogue ratios cover all five shapes.
+for (const variant of ['borderless', 'rectangle', 'oval']) {
+  const rasterLayout = engine.createLayout(geometry, { variant, locationKey: 'emDash' });
+  const [ratioWidth, ratioHeight] = expectedSizes[variant].ratio.split(':').map(Number);
+  assert(engine.rasterDimensions(rasterLayout).width >= 4000, `${variant}: default export must stay high resolution`);
+  for (const requestedWidth of [2000, 4000, 6000]) {
+    const dimensions = engine.rasterDimensions(rasterLayout, requestedWidth);
+    assert(Number.isInteger(dimensions.width) && Number.isInteger(dimensions.height));
+    assert(dimensions.width >= requestedWidth, `${variant}: physical dimensions must not reduce pixel width`);
+    assert(dimensions.width < requestedWidth + ratioWidth, `${variant}: excessive raster enlargement`);
+    assert.equal(dimensions.width * ratioHeight, dimensions.height * ratioWidth, `${variant}: raster aspect must be exact`);
+    near(dimensions.dpi, dimensions.width * 25.4 / rasterLayout.widthMm, `${variant}: DPI metadata`);
+    near(dimensions.height * 25.4 / dimensions.dpi, rasterLayout.heightMm, `${variant}: raster physical height`);
+  }
 }
-console.log('20 distinct designs verified, including exact hyphen/en-dash/em-dash captions and consistent comparison type sizes.');
+console.log('20 distinct designs verified: supplier dimensions and ratios, unstretched glyphs, exact dash captions, border clearance, and high-resolution raster sizes.');
 console.log(`Export samples: ${directory}`);

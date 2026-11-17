@@ -7,8 +7,8 @@
   <meta name="description" content="20 Sweet Times stamp designs with SVG, PDF, PNG and JPG downloads.">
   <title>Sweet Times — Stamps</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="./styles.css">
-  <script type="module" src="./app.js"></script>
+  <link rel="stylesheet" href="./styles.css?v=supplier-sizes-1">
+  <script type="module" src="./app.js?v=supplier-sizes-1"></script>
 </head>
 <body>
   <main>
@@ -18,26 +18,22 @@
     </header>
 
     <details class="settings-panel" id="export-settings">
-    <summary><span>Export settings</span><span id="settings-summary">45 mm · Black · 600 DPI</span></summary>
+    <summary><span>Export settings</span><span id="settings-summary">Black · 4,000 px+</span></summary>
     <form class="settings" id="settings" aria-label="Stamp settings">
-      <div class="field">
-        <label for="width">Width</label>
-        <div class="number-field"><input id="width" name="width" type="number" inputmode="decimal" min="20" max="100" step="0.5" value="45" required aria-describedby="width-note"><span aria-hidden="true">mm</span></div>
-      </div>
       <div class="field">
         <label for="ink">Ink</label>
         <div class="select-field ink-field"><i id="ink-sample" aria-hidden="true"></i><select id="ink" name="ink"><option value="#171717">Black</option><option value="#193f69">Blue</option><option value="#9b3037">Red</option></select></div>
       </div>
       <div class="field">
-        <label for="dpi">PNG / JPG resolution</label>
-        <div class="select-field"><select id="dpi" name="dpi"><option value="300">300 DPI</option><option value="600" selected>600 DPI</option><option value="1200">1200 DPI</option></select></div>
+        <label for="pixel-width">PNG / JPG minimum width</label>
+        <div class="select-field"><select id="pixel-width" name="pixel-width" aria-describedby="resolution-note"><option value="2000">2,000 px</option><option value="4000" selected>4,000 px</option><option value="6000">6,000 px</option></select></div>
       </div>
       <div class="field">
         <label for="border">Border thickness</label>
         <div class="select-field"><select id="border" name="border"><option value="0.25">0.25 mm</option><option value="0.35" selected>0.35 mm</option><option value="0.5">0.50 mm</option></select></div>
       </div>
       <div class="settings-bottom">
-        <p id="width-note">Dimensions include a 1.5 mm margin.</p>
+        <p id="resolution-note">Image dimensions round up to preserve the exact aspect ratio. SVG and PDF remain vector.</p>
         <label class="preview-toggle"><input type="checkbox" id="checkerboard"><span class="toggle-track" aria-hidden="true"></span><span>Transparent preview</span></label>
       </div>
     </form>
@@ -49,6 +45,7 @@
       <a href="#set-en-dash">En dash (–)</a>
       <a href="#set-em-dash">Em dash (—)</a>
     </nav>
+    <p class="gallery-note">Stamp dimensions: width × height.</p>
     <p class="page-error" id="page-error" role="alert" hidden></p>
     <div class="gallery" id="gallery" aria-label="Stamp designs" aria-busy="true">
       <p class="loading">Loading designs…</p>

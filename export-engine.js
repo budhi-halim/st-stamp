@@ -7,6 +7,16 @@ const number = (value) => Number(value.toFixed(6)).toString();
 const escapeXml = (value) => String(value).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
 const pdfUnicodeString = (value) => '<FEFF' + Array.from(String(value), c => c.charCodeAt(0).toString(16).padStart(4, '0')).join('') + '>';
 
+// Supplier sizes are width × height. Keep the nominal size and its aspect
+// ratio together so previews, labels, and every exported artboard agree.
+export const STAMP_SPECS = Object.freeze({
+  borderless: Object.freeze({ widthMm: 43, heightMm: 17, ratio: '43:17' }),
+  rectangle: Object.freeze({ widthMm: 55, heightMm: 22, ratio: '5:2' }),
+  rounded: Object.freeze({ widthMm: 55, heightMm: 22, ratio: '5:2' }),
+  oval: Object.freeze({ widthMm: 35, heightMm: 24, ratio: '35:24' }),
+  'double-oval': Object.freeze({ widthMm: 35, heightMm: 24, ratio: '35:24' }),
+});
+
 function finite(value, name, min, max) {
   if (!Number.isFinite(value) || value < min || value > max) throw new RangeError(`${name} must be between ${min} and ${max}.`);
   return value;
@@ -87,55 +97,67 @@ function outlineRing(kind, x, y, width, height, thickness, radius = 0) {
 }
 
 /**
- * Width is the exported canvas width, including padding. Coordinates are
- * flattened into a 1000-unit-wide viewBox; no font or SVG transform is needed.
+ * The artboard is the fixed supplier size. A proportional inset keeps the
+ * outer frame at the same aspect ratio; padding never enlarges the artboard.
+ * Glyphs use one scale per line, without horizontal or vertical stretching.
  */
 export function createLayout(geometry, {
-  widthMm = 45, ink = '#171717', jakartaScale = 0.42, gapMm = 2, paddingMm = 1.5,
+  ink = '#171717', jakartaScale = 0.42, gapMm = 2,
   variant = 'borderless', borderMm = 0.35, locationKey = 'jakarta',
 } = {}) {
-  finite(widthMm, 'Width', 10, 300);
   finite(jakartaScale, 'JAKARTA width', 0.1, 1);
   finite(gapMm, 'Line gap', 0, 30);
-  finite(paddingMm, 'Padding', 0, 30);
   finite(borderMm, 'Border thickness', 0.1, 2);
-  if (!['borderless', 'rectangle', 'rounded', 'oval', 'double-oval'].includes(variant)) throw new TypeError('Unsupported stamp variant.');
+  if (!Object.hasOwn(STAMP_SPECS, variant)) throw new TypeError('Unsupported stamp variant.');
+  const { widthMm, heightMm, ratio } = STAMP_SPECS[variant];
   if (!['jakarta', 'hyphen', 'enDash', 'emDash'].includes(locationKey)) throw new TypeError('Unsupported caption.');
   const location = geometry.locations?.[locationKey] || (locationKey === 'jakarta' ? geometry.location : null);
   if (!location?.commands) throw new Error('The stamp caption could not be loaded. Please reload the page.');
-  if (paddingMm * 2 >= widthMm) throw new RangeError('Padding must be smaller than half the width.');
   ink = validateInk(ink);
   const widthPx = 1000;
   const unitsPerMm = widthPx / widthMm;
-  const padding = paddingMm * unitsPerMm;
-  const outerWidth = widthPx - padding * 2;
+  const heightPx = heightMm * unitsPerMm;
+  const insetFraction = 0.03;
+  const paddingX = widthPx * insetFraction;
+  const paddingY = heightPx * insetFraction;
+  const outerWidth = widthPx - paddingX * 2;
+  const outerHeight = heightPx - paddingY * 2;
   const border = borderMm * unitsPerMm;
   const clearance = Math.max(1, widthMm * 0.03) * unitsPerMm;
   const secondRingInset = (borderMm + 0.65) * unitsPerMm;
-  const ovalInset = border + clearance + (variant === 'double-oval' ? secondRingInset : 0);
   const isOval = variant === 'oval' || variant === 'double-oval';
-  const scriptWidth = variant === 'borderless' ? outerWidth
-    : isOval ? (outerWidth - 2 * ovalInset) * 0.8
-      : outerWidth - 2 * (border + clearance);
-  if (scriptWidth <= 0) throw new RangeError('The width is too small for this border and padding.');
-  const wordScale = scriptWidth / geometry.wordmark.width;
-  const wordHeight = geometry.wordmark.height * wordScale;
   // All three country captions use identical glyph size and tracking. Their
   // visible widths differ only because of the chosen dash's actual width.
-  const locationScale = locationKey === 'jakarta'
-    ? scriptWidth * jakartaScale / location.width
-    : scriptWidth * 0.82 / Math.max(...['hyphen', 'enDash', 'emDash'].map(key => geometry.locations[key].width));
+  const locationScalePerWidth = locationKey === 'jakarta'
+    ? jakartaScale / location.width
+    : 0.82 / Math.max(...['hyphen', 'enDash', 'emDash'].map(key => geometry.locations[key].width));
+  const textHeightPerWidth = geometry.wordmark.height / geometry.wordmark.width + location.height * locationScalePerWidth;
+  const gap = gapMm * unitsPerMm;
+  const contentInset = variant === 'borderless' ? 0
+    : border + clearance + (variant === 'double-oval' ? secondRingInset : 0);
+  const safeWidth = outerWidth - 2 * contentInset;
+  const safeHeight = outerHeight - 2 * contentInset;
+  if (safeWidth <= 0 || safeHeight <= gap) throw new RangeError('The line gap or border is too large for this stamp size.');
+  let scriptWidth;
+  if (isOval) {
+    // Fit the whole two-line bounding rectangle inside an inset ellipse.
+    // (w / safeWidth)^2 + ((heightPerWidth * w + gap) / safeHeight)^2 = 1.
+    // This also keeps the text corners clear of the curved inner frame.
+    const a = 1 / safeWidth ** 2 + textHeightPerWidth ** 2 / safeHeight ** 2;
+    const b = 2 * textHeightPerWidth * gap / safeHeight ** 2;
+    const c = gap ** 2 / safeHeight ** 2 - 1;
+    scriptWidth = (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a);
+  } else {
+    scriptWidth = Math.min(safeWidth, (safeHeight - gap) / textHeightPerWidth);
+  }
+  const wordScale = scriptWidth / geometry.wordmark.width;
+  const wordHeight = geometry.wordmark.height * wordScale;
+  const locationScale = scriptWidth * locationScalePerWidth;
   const locationWidth = location.width * locationScale;
   const locationHeight = location.height * locationScale;
-  const groupHeight = wordHeight + gapMm * unitsPerMm + locationHeight;
-  // The text bounding rectangle fits inside an inset ellipse. Its half-width
-  // occupies 80% of the inner radius, so the required half-height is h / 0.6.
-  const outerHeight = variant === 'borderless' ? groupHeight
-    : isOval ? groupHeight / 0.6 + 2 * ovalInset
-      : groupHeight + 2 * (border + clearance);
-  const groupY = padding + (outerHeight - groupHeight) / 2;
-  const locationY = groupY + wordHeight + gapMm * unitsPerMm;
-  const heightPx = outerHeight + padding * 2;
+  const groupHeight = wordHeight + gap + locationHeight;
+  const groupY = (heightPx - groupHeight) / 2;
+  const locationY = groupY + wordHeight + gap;
   const rows = [
     { id: 'wordmark', data: geometry.wordmark, scale: wordScale, x: (widthPx - scriptWidth) / 2, y: groupY, width: scriptWidth, height: wordHeight },
     { id: 'location', data: location, scale: locationScale, x: (widthPx - locationWidth) / 2, y: locationY, width: locationWidth, height: locationHeight },
@@ -147,15 +169,17 @@ export function createLayout(geometry, {
   if (variant !== 'borderless') {
     const radius = variant === 'rounded' ? Math.min(outerHeight * 0.2, 3.5 * unitsPerMm) : 0;
     const kind = isOval ? 'oval' : 'rectangle';
-    const commands = outlineRing(kind, padding, padding, outerWidth, outerHeight, border, radius);
-    paths.unshift({ id: 'border', commands, d: pathData(commands), bounds: { x: padding, y: padding, width: outerWidth, height: outerHeight } });
+    const commands = outlineRing(kind, paddingX, paddingY, outerWidth, outerHeight, border, radius);
+    paths.unshift({ id: 'border', commands, d: pathData(commands), bounds: { x: paddingX, y: paddingY, width: outerWidth, height: outerHeight } });
     if (variant === 'double-oval') {
       const inset = secondRingInset;
-      const inner = outlineRing('oval', padding + inset, padding + inset, outerWidth - 2 * inset, outerHeight - 2 * inset, border);
-      paths.splice(1, 0, { id: 'inner-border', commands: inner, d: pathData(inner), bounds: { x: padding + inset, y: padding + inset, width: outerWidth - 2 * inset, height: outerHeight - 2 * inset } });
+      const inner = outlineRing('oval', paddingX + inset, paddingY + inset, outerWidth - 2 * inset, outerHeight - 2 * inset, border);
+      paths.splice(1, 0, { id: 'inner-border', commands: inner, d: pathData(inner), bounds: { x: paddingX + inset, y: paddingY + inset, width: outerWidth - 2 * inset, height: outerHeight - 2 * inset } });
     }
   }
-  return { widthMm, heightMm: heightPx / unitsPerMm, widthPx, heightPx, ink, paths, paddingMm, gapMm, jakartaScale, variant, borderMm, locationKey, locationText: location.text };
+  return { widthMm, heightMm, ratio, widthPx, heightPx, ink, paths, insetFraction,
+    marginsMm: { x: paddingX / unitsPerMm, y: paddingY / unitsPerMm },
+    gapMm, jakartaScale, variant, borderMm, locationKey, locationText: location.text };
 }
 
 export function createSvg(layout, { background = 'transparent' } = {}) {
@@ -199,12 +223,21 @@ export function createPdf(layout) {
   return encode(pdf);
 }
 
-export function rasterDimensions(layout, dpi = 600) {
-  finite(dpi, 'DPI', 72, 2400);
-  const width = Math.max(1, Math.round(layout.widthMm / 25.4 * dpi));
-  const height = Math.max(1, Math.round(layout.heightMm / 25.4 * dpi));
-  if (width * height > 40000000) throw new RangeError('This image is too large. Reduce the width or resolution.');
-  return { width, height, dpi };
+export function rasterDimensions(layout, pixelWidth = 4000) {
+  finite(pixelWidth, 'Image width', 100, 10000);
+  if (!Number.isInteger(pixelWidth)) throw new RangeError('Image width must be a whole number of pixels.');
+  // An integer multiple of the reduced ratio preserves the exact proportion.
+  // Round upward: a smaller physical stamp never reduces the requested pixels.
+  const gcd = (a, b) => b ? gcd(b, a % b) : a;
+  const divisor = gcd(layout.widthMm, layout.heightMm);
+  const ratioWidth = layout.widthMm / divisor;
+  const ratioHeight = layout.heightMm / divisor;
+  const multiple = Math.ceil(pixelWidth / ratioWidth);
+  const width = multiple * ratioWidth;
+  const height = multiple * ratioHeight;
+  if (width * height > 40000000) throw new RangeError('This image exceeds the browser export limit. Choose a smaller pixel width or download SVG or PDF.');
+  const dpi = width / layout.widthMm * 25.4;
+  return { width, height, dpi, requestedWidth: pixelWidth };
 }
 
 const crcTable = (() => {
@@ -284,10 +317,10 @@ export function setJpegDpi(bytes, dpi) {
   return concatBytes([data.subarray(0, 2), jfif, data.subarray(2)]);
 }
 
-export async function createRaster(layout, { type = 'png', background = 'transparent', dpi = 600 } = {}) {
+export async function createRaster(layout, { type = 'png', background = 'transparent', pixelWidth = 4000 } = {}) {
   if (!['png', 'jpeg'].includes(type)) throw new TypeError('Unsupported image format.');
   if (!['transparent', 'white'].includes(background)) throw new TypeError('Unsupported background.');
-  const { width, height } = rasterDimensions(layout, dpi);
+  const { width, height, dpi } = rasterDimensions(layout, pixelWidth);
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;

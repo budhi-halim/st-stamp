@@ -1,4 +1,4 @@
-import { loadGeometry, createLayout, createSvg, createPdf, createRaster, downloadBlob } from './export-engine.js';
+import { STAMP_SPECS, loadGeometry, createLayout, createSvg, createPdf, createRaster, rasterDimensions, downloadBlob } from './export-engine.js?v=supplier-sizes-1';
 
 const variants = [
   { id: 'borderless', name: 'Borderless' },
@@ -27,9 +27,8 @@ const formats = [
 const downloadIcon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.5v10m-3.5-3.5L10 12.5l3.5-3.5M3.5 13v3.5h13V13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const gallery = document.querySelector('#gallery');
 const form = document.querySelector('#settings');
-const widthInput = document.querySelector('#width');
 const inkInput = document.querySelector('#ink');
-const dpiInput = document.querySelector('#dpi');
+const pixelInput = document.querySelector('#pixel-width');
 const borderInput = document.querySelector('#border');
 const checkerboard = document.querySelector('#checkerboard');
 const errorMessage = document.querySelector('#page-error');
@@ -42,7 +41,7 @@ let preparing;
 let generation = 0;
 
 function state() {
-  return { widthMm: Number(widthInput.value), ink: inkInput.value, borderMm: Number(borderInput.value), dpi: Number(dpiInput.value) };
+  return { ink: inkInput.value, borderMm: Number(borderInput.value), pixelWidth: Number(pixelInput.value) };
 }
 
 function flash(message) {
@@ -58,21 +57,22 @@ function showError(message) {
 }
 
 function updateSummary() {
-  document.querySelector('#settings-summary').textContent = `${widthInput.value} mm · ${inkInput.selectedOptions[0].textContent} · ${dpiInput.value} DPI`;
+  document.querySelector('#settings-summary').textContent = `${inkInput.selectedOptions[0].textContent} · ${Number(pixelInput.value).toLocaleString('en-US')} px+`;
 }
 
 function filename(design, format, current) {
-  const width = String(current.widthMm).replace('.', '-');
+  const size = STAMP_SPECS[design.variant];
   const ink = { '#171717': 'black', '#193f69': 'blue', '#9b3037': 'red' }[current.ink] || current.ink.slice(1);
   const caption = design.set.key === 'jakarta' ? '' : `jakarta-indonesia-${design.set.id}-`;
-  const base = `sweet-times-${caption}${design.variant}-${width}mm-${ink}`;
+  const base = `sweet-times-${caption}${design.variant}-${size.widthMm}x${size.heightMm}mm-${ink}`;
   if (format === 'svg' || format === 'pdf') return `${base}.${format}`;
-  if (format === 'jpg') return `${base}-${current.dpi}dpi-white.jpg`;
-  return `${base}-${current.dpi}dpi-${format === 'png-white' ? 'white' : 'transparent'}.png`;
+  const pixels = rasterDimensions(size, current.pixelWidth);
+  if (format === 'jpg') return `${base}-${pixels.width}x${pixels.height}px-white.jpg`;
+  return `${base}-${pixels.width}x${pixels.height}px-${format === 'png-white' ? 'white' : 'transparent'}.png`;
 }
 
 function cacheKey(design, format, current) {
-  return [design.id, format, current.widthMm, current.ink, current.borderMm, current.dpi].join('|');
+  return [design.id, format, current.ink, current.borderMm, current.pixelWidth].join('|');
 }
 
 async function fileFor(design, format, current) {
@@ -82,7 +82,7 @@ async function fileFor(design, format, current) {
   let blob;
   if (format === 'svg') blob = new Blob([createSvg(layout)], { type: 'image/svg+xml' });
   else if (format === 'pdf') blob = new Blob([createPdf(layout)], { type: 'application/pdf' });
-  else blob = await createRaster(layout, { type: format === 'jpg' ? 'jpeg' : 'png', background: format === 'png-transparent' ? 'transparent' : 'white', dpi: current.dpi });
+  else blob = await createRaster(layout, { type: format === 'jpg' ? 'jpeg' : 'png', background: format === 'png-transparent' ? 'transparent' : 'white', pixelWidth: current.pixelWidth });
   const file = { blob, filename: filename(design, format, current) };
   cache.set(key, file);
   return file;
@@ -91,7 +91,7 @@ async function fileFor(design, format, current) {
 // Preparing the selected files before a tap preserves the user gesture for iOS downloads.
 async function prepareSelected() {
   const ticket = ++generation;
-  if (!geometry || !widthInput.checkValidity()) return;
+  if (!geometry) return;
   const current = state();
   for (const design of designs) {
     if (ticket !== generation) return;
@@ -109,11 +109,6 @@ function schedulePreparation() {
 
 function renderPreviews() {
   if (!geometry) return;
-  if (!widthInput.checkValidity()) {
-    showError('Choose a width from 20 to 100 mm, in 0.5 mm steps.');
-    document.querySelectorAll('.download-button').forEach(button => { button.disabled = true; });
-    return;
-  }
   showError('');
   const current = state();
   document.querySelector('#ink-sample').style.backgroundColor = current.ink;
@@ -129,7 +124,8 @@ function renderPreviews() {
         .replace('id="stamp-title"', `id="stamp-title-${design.id}"`)
         .replace('aria-labelledby="stamp-title"', `aria-labelledby="stamp-title-${design.id}"`)
         .replace(/id="(wordmark|location|border|inner-border)"/g, (_, id) => `id="${id}-${design.id}"`);
-      card.querySelector('.dimensions').textContent = `${current.widthMm} × ${layout.heightMm.toFixed(1)} mm`;
+      const size = STAMP_SPECS[design.variant];
+      card.querySelector('.dimensions').innerHTML = `<strong>${size.widthMm / 10} × ${size.heightMm / 10} cm</strong><span>${size.widthMm} × ${size.heightMm} mm · Ratio ${size.ratio}</span>`;
       card.querySelector('.download-button').disabled = false;
     }
     cache.clear();
@@ -183,15 +179,15 @@ gallery.addEventListener('click', async event => {
   } catch (error) {
     showError(`Could not download the file. ${error.message}`);
   } finally {
-    button.disabled = !widthInput.checkValidity();
+    button.disabled = false;
     button.removeAttribute('aria-busy');
     button.querySelector('span').textContent = 'Download';
   }
 });
 
 form.addEventListener('submit', event => event.preventDefault());
-for (const input of [widthInput, inkInput, borderInput]) input.addEventListener('input', renderPreviews);
-dpiInput.addEventListener('change', () => { updateSummary(); cache.clear(); schedulePreparation(); });
+for (const input of [inkInput, borderInput]) input.addEventListener('input', renderPreviews);
+pixelInput.addEventListener('change', () => { updateSummary(); cache.clear(); schedulePreparation(); });
 checkerboard.addEventListener('change', () => gallery.classList.toggle('checkerboard', checkerboard.checked));
 document.querySelector('#reset').addEventListener('click', () => {
   form.reset();
