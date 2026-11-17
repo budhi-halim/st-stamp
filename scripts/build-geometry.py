@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import ctypes as C
 import ctypes.util
+from io import BytesIO
 import json
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from fontTools.ttLib import TTFont
 from fontTools.pens.basePen import BasePen
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.transformPen import TransformPen
+from fontTools.varLib.instancer import instantiateVariableFont
 
 
 class GlyphInfo(C.Structure):
@@ -105,12 +107,26 @@ class CubicPen(BasePen):
         self.commands.append(["Z"])
 
 
-def outline(font_path: Path, text: str, tracking_em: float = 0):
+def outline(font_path: Path, text: str, tracking_em: float = 0,
+            weight: int | None = None):
     font = TTFont(font_path)
+    font_bytes = font_path.read_bytes()
+    if weight is not None:
+        axes = {axis.axisTag: axis for axis in font["fvar"].axes} if "fvar" in font else {}
+        axis = axes.get("wght")
+        if axis is None or not axis.minValue <= weight <= axis.maxValue:
+            raise ValueError(f"Weight {weight} is unavailable in {font_path.name}")
+        # Shape the same fully instantiated curves that are outlined below.
+        # 650 is an actual interpolation on the weight axis, not a named style
+        # or a synthetic outline. Its explicit output label reflects that.
+        instantiateVariableFont(font, {"wght": weight}, inplace=True)
+        buffer = BytesIO()
+        font.save(buffer)
+        font_bytes = buffer.getvalue()
     glyph_set = font.getGlyphSet()
     order = font.getGlyphOrder()
     upem = font["head"].unitsPerEm
-    shaped = shape(font_path.read_bytes(), text, upem)
+    shaped = shape(font_bytes, text, upem)
     cubic = CubicPen(glyph_set)
     bounds = BoundsPen(glyph_set)
     x = y = 0
@@ -130,12 +146,17 @@ def outline(font_path: Path, text: str, tracking_em: float = 0):
             values.extend([round(command[i] - min_x, 6), round(command[i + 1] - min_y, 6)])
         normalized.append(values)
     font_name = font["name"].getDebugName(4) or font_path.stem
-    return {
+    if weight is not None:
+        font_name = "Outfit Bold" if weight == 700 else f"Outfit {weight}"
+    result = {
         "text": text, "font": font_name, "unitsPerEm": upem,
         "trackingEm": tracking_em,
         "width": round(max_x - min_x, 6), "height": round(max_y - min_y, 6),
         "commands": normalized,
     }
+    if weight is not None:
+        result["weight"] = weight
+    return result
 
 
 def main():
@@ -144,23 +165,48 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     location_font = args.fonts / "outfit-semibold.ttf"
-    locations = {
-        "jakarta": outline(location_font, "JAKARTA", 0.16),
-        "hyphen": outline(location_font, "JAKARTA - INDONESIA", 0.16),
-        "enDash": outline(location_font, "JAKARTA \u2013 INDONESIA", 0.16),
-        "emDash": outline(location_font, "JAKARTA \u2014 INDONESIA", 0.16),
+    captions = {
+        "jakarta": "JAKARTA",
+        "hyphen": "JAKARTA - INDONESIA",
+        "enDash": "JAKARTA \u2013 INDONESIA",
+        "emDash": "JAKARTA \u2014 INDONESIA",
+    }
+    locations = {key: outline(location_font, text, 0.16)
+                 for key, text in captions.items()}
+    variable_font = args.fonts / "outfit-variable.ttf"
+    location_weights = {
+        str(weight): {key: outline(variable_font, text, 0.16, weight=weight)
+                      for key, text in captions.items()}
+        for weight in (650, 700)
     }
     payload = {
-        "version": 1,
+        "version": 2,
         "wordmark": outline(args.fonts / "playlist-script.otf", "Sweet Times"),
         "location": locations["jakarta"],
         "locations": locations,
+        "locationWeights": location_weights,
+        "fontWeights": {
+            "wordmark": {
+                "family": "Playlist Script", "available": [400], "variable": False,
+                "source": "https://stsweettimes.github.io/links/assets/fonts/Playlist%20Script.otf",
+            },
+            "location": {
+                "family": "Outfit", "legacyWeight": 600,
+                "axis": {"tag": "wght", "min": 100, "max": 900},
+                "generated": [650, 700],
+                "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/outfit/Outfit%5Bwght%5D.ttf",
+            },
+        },
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
     summary = lambda data: {k: v for k, v in data.items() if k != "commands"}
     print(json.dumps({"wordmark": summary(payload["wordmark"]),
-                      "locations": {key: summary(data) for key, data in locations.items()}},
+                      "locations": {key: summary(data) for key, data in locations.items()},
+                      "locationWeights": {
+                          weight: {key: summary(data) for key, data in captions.items()}
+                          for weight, captions in location_weights.items()
+                      }},
                      ensure_ascii=False))
 
 

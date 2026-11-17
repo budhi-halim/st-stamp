@@ -17,6 +17,13 @@ export const STAMP_SPECS = Object.freeze({
   'double-oval': Object.freeze({ widthMm: 35, heightMm: 24, ratio: '35:24' }),
 });
 
+// Playlist Script supplies one real weight. Its added outline is rendered as
+// vector geometry in every export; Outfit uses genuine variable-font instances.
+export const WEIGHT_PROFILES = Object.freeze({
+  standard: Object.freeze({ label: 'Standard', captionWeight: 650, wordmarkOutlineMm: 0.06 }),
+  bold: Object.freeze({ label: 'Bold', captionWeight: 700, wordmarkOutlineMm: 0.18 }),
+});
+
 function finite(value, name, min, max) {
   if (!Number.isFinite(value) || value < min || value > max) throw new RangeError(`${name} must be between ${min} and ${max}.`);
   return value;
@@ -27,11 +34,13 @@ function validateInk(ink) {
   return ink.toLowerCase();
 }
 
-export async function loadGeometry(url = './stamp-geometry.json') {
+export async function loadGeometry(url = './stamp-geometry.json?v=weight-sets-1') {
   const response = await fetch(url);
   if (!response.ok) throw new Error('The stamp lettering could not be loaded. Please reload the page.');
   const geometry = await response.json();
-  if (geometry.version !== 1 || !geometry.wordmark?.commands || !geometry.location?.commands) throw new Error('The stamp lettering file is invalid.');
+  const hasWeights = Object.values(WEIGHT_PROFILES).every(({ captionWeight }) =>
+    ['jakarta', 'hyphen', 'enDash', 'emDash'].every(key => geometry.locationWeights?.[captionWeight]?.[key]?.commands));
+  if (geometry.version !== 2 || !geometry.wordmark?.commands || !hasWeights) throw new Error('The stamp lettering file is invalid. Please reload the page.');
   return geometry;
 }
 
@@ -41,6 +50,15 @@ function transformCommands(commands, scale, x, y) {
 
 function pathData(commands) {
   return commands.map(([op, ...values]) => op + values.map(number).join(' ')).join('');
+}
+
+function makePath(id, commands, bounds, strokeWidth = 0) {
+  const halfStroke = strokeWidth / 2;
+  const inkBounds = {
+    x: bounds.x - halfStroke, y: bounds.y - halfStroke,
+    width: bounds.width + strokeWidth, height: bounds.height + strokeWidth,
+  };
+  return { id, commands, d: pathData(commands), bounds, inkBounds, strokeWidth };
 }
 
 function oval(x, y, width, height) {
@@ -104,6 +122,7 @@ function outlineRing(kind, x, y, width, height, thickness, radius = 0) {
 export function createLayout(geometry, {
   ink = '#171717', jakartaScale = 0.42, gapMm = 2,
   variant = 'borderless', borderMm = 0.35, locationKey = 'jakarta', divider = false,
+  weightKey = 'standard',
 } = {}) {
   finite(jakartaScale, 'JAKARTA width', 0.1, 1);
   finite(gapMm, 'Line gap', 0, 30);
@@ -112,9 +131,12 @@ export function createLayout(geometry, {
   const dividerMm = divider ? 0.25 : 0;
   if (divider && gapMm <= dividerMm) throw new RangeError('The line gap must be greater than 0.25 mm for a divider.');
   if (!Object.hasOwn(STAMP_SPECS, variant)) throw new TypeError('Unsupported stamp variant.');
+  if (!Object.hasOwn(WEIGHT_PROFILES, weightKey)) throw new TypeError('Unsupported lettering weight.');
+  const { label: weightLabel, captionWeight, wordmarkOutlineMm } = WEIGHT_PROFILES[weightKey];
   const { widthMm, heightMm, ratio } = STAMP_SPECS[variant];
   if (!['jakarta', 'hyphen', 'enDash', 'emDash'].includes(locationKey)) throw new TypeError('Unsupported caption.');
-  const location = geometry.locations?.[locationKey] || (locationKey === 'jakarta' ? geometry.location : null);
+  const weightedLocations = geometry.locationWeights?.[captionWeight];
+  const location = weightedLocations?.[locationKey];
   if (!location?.commands) throw new Error('The stamp caption could not be loaded. Please reload the page.');
   ink = validateInk(ink);
   const widthPx = 1000;
@@ -126,6 +148,7 @@ export function createLayout(geometry, {
   const outerWidth = widthPx - paddingX * 2;
   const outerHeight = heightPx - paddingY * 2;
   const border = borderMm * unitsPerMm;
+  const strokeWidth = wordmarkOutlineMm * unitsPerMm;
   const clearance = Math.max(1, widthMm * 0.03) * unitsPerMm;
   const secondRingInset = (borderMm + 0.65) * unitsPerMm;
   const isOval = variant === 'oval' || variant === 'double-oval';
@@ -133,41 +156,48 @@ export function createLayout(geometry, {
   // visible widths differ only because of the chosen dash's actual width.
   const locationScalePerWidth = locationKey === 'jakarta'
     ? jakartaScale / location.width
-    : 0.82 / Math.max(...['hyphen', 'enDash', 'emDash'].map(key => geometry.locations[key].width));
-  const textHeightPerWidth = geometry.wordmark.height / geometry.wordmark.width + location.height * locationScalePerWidth;
+    : 0.82 / Math.max(...['hyphen', 'enDash', 'emDash'].map(key => weightedLocations[key].width));
+  const wordmarkAspect = geometry.wordmark.height / geometry.wordmark.width;
+  const textHeightPerWidth = wordmarkAspect + location.height * locationScalePerWidth;
   const gap = gapMm * unitsPerMm;
+  // scriptWidth is the visible ink width, including the centered outline.
+  // The outline adds an affine height term while retaining uniform glyph scale.
+  const heightOffset = gap + strokeWidth * (1 - wordmarkAspect);
   const contentInset = variant === 'borderless' ? 0
     : border + clearance + (variant === 'double-oval' ? secondRingInset : 0);
   const safeWidth = outerWidth - 2 * contentInset;
   const safeHeight = outerHeight - 2 * contentInset;
-  if (safeWidth <= 0 || safeHeight <= gap) throw new RangeError('The line gap or border is too large for this stamp size.');
+  if (safeWidth <= strokeWidth || safeHeight <= heightOffset) throw new RangeError('The line gap or border is too large for this stamp size.');
   let scriptWidth;
   if (isOval) {
     // Fit the whole two-line bounding rectangle inside an inset ellipse.
-    // (w / safeWidth)^2 + ((heightPerWidth * w + gap) / safeHeight)^2 = 1.
+    // (w / safeWidth)^2 + ((heightPerWidth * w + heightOffset) / safeHeight)^2 = 1.
     // This also keeps the text corners clear of the curved inner frame.
     const a = 1 / safeWidth ** 2 + textHeightPerWidth ** 2 / safeHeight ** 2;
-    const b = 2 * textHeightPerWidth * gap / safeHeight ** 2;
-    const c = gap ** 2 / safeHeight ** 2 - 1;
+    const b = 2 * textHeightPerWidth * heightOffset / safeHeight ** 2;
+    const c = heightOffset ** 2 / safeHeight ** 2 - 1;
     scriptWidth = (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a);
   } else {
-    scriptWidth = Math.min(safeWidth, (safeHeight - gap) / textHeightPerWidth);
+    scriptWidth = Math.min(safeWidth, (safeHeight - heightOffset) / textHeightPerWidth);
   }
-  const wordScale = scriptWidth / geometry.wordmark.width;
+  if (scriptWidth <= strokeWidth) throw new RangeError('The lettering cannot fit within this stamp size.');
+  const wordWidth = scriptWidth - strokeWidth;
+  const wordScale = wordWidth / geometry.wordmark.width;
   const wordHeight = geometry.wordmark.height * wordScale;
+  const wordInkHeight = wordHeight + strokeWidth;
   const locationScale = scriptWidth * locationScalePerWidth;
   const locationWidth = location.width * locationScale;
   const locationHeight = location.height * locationScale;
-  const groupHeight = wordHeight + gap + locationHeight;
+  const groupHeight = wordInkHeight + gap + locationHeight;
   const groupY = (heightPx - groupHeight) / 2;
-  const locationY = groupY + wordHeight + gap;
+  const locationY = groupY + wordInkHeight + gap;
   const rows = [
-    { id: 'wordmark', data: geometry.wordmark, scale: wordScale, x: (widthPx - scriptWidth) / 2, y: groupY, width: scriptWidth, height: wordHeight },
-    { id: 'location', data: location, scale: locationScale, x: (widthPx - locationWidth) / 2, y: locationY, width: locationWidth, height: locationHeight },
+    { id: 'wordmark', data: geometry.wordmark, scale: wordScale, x: (widthPx - wordWidth) / 2, y: groupY + strokeWidth / 2, width: wordWidth, height: wordHeight, stroke: strokeWidth },
+    { id: 'location', data: location, scale: locationScale, x: (widthPx - locationWidth) / 2, y: locationY, width: locationWidth, height: locationHeight, stroke: 0 },
   ];
-  const paths = rows.map(({ id, data, scale, x, y, width, height }) => {
+  const paths = rows.map(({ id, data, scale, x, y, width, height, stroke }) => {
     const commands = transformCommands(data.commands, scale, x, y);
-    return { id, d: pathData(commands), commands, bounds: { x, y, width, height } };
+    return makePath(id, commands, { x, y, width, height }, stroke);
   });
   if (divider) {
     // The rule sits within the existing line gap, so neither the lettering
@@ -175,31 +205,36 @@ export function createLayout(geometry, {
     const width = scriptWidth * 0.76;
     const height = dividerMm * unitsPerMm;
     const x = (widthPx - width) / 2;
-    const y = groupY + wordHeight + (gap - height) / 2;
+    const y = groupY + wordInkHeight + (gap - height) / 2;
     const commands = rectangle(x, y, width, height);
-    paths.splice(1, 0, { id: 'divider', commands, d: pathData(commands), bounds: { x, y, width, height } });
+    paths.splice(1, 0, makePath('divider', commands, { x, y, width, height }));
   }
   if (variant !== 'borderless') {
     const radius = variant === 'rounded' ? Math.min(outerHeight * 0.2, 3.5 * unitsPerMm) : 0;
     const kind = isOval ? 'oval' : 'rectangle';
     const commands = outlineRing(kind, paddingX, paddingY, outerWidth, outerHeight, border, radius);
-    paths.unshift({ id: 'border', commands, d: pathData(commands), bounds: { x: paddingX, y: paddingY, width: outerWidth, height: outerHeight } });
+    paths.unshift(makePath('border', commands, { x: paddingX, y: paddingY, width: outerWidth, height: outerHeight }));
     if (variant === 'double-oval') {
       const inset = secondRingInset;
       const inner = outlineRing('oval', paddingX + inset, paddingY + inset, outerWidth - 2 * inset, outerHeight - 2 * inset, border);
-      paths.splice(1, 0, { id: 'inner-border', commands: inner, d: pathData(inner), bounds: { x: paddingX + inset, y: paddingY + inset, width: outerWidth - 2 * inset, height: outerHeight - 2 * inset } });
+      paths.splice(1, 0, makePath('inner-border', inner, { x: paddingX + inset, y: paddingY + inset, width: outerWidth - 2 * inset, height: outerHeight - 2 * inset }));
     }
   }
   return { widthMm, heightMm, ratio, widthPx, heightPx, ink, paths, insetFraction,
     marginsMm: { x: paddingX / unitsPerMm, y: paddingY / unitsPerMm },
-    gapMm, jakartaScale, variant, borderMm, locationKey, locationText: location.text, divider, dividerMm };
+    gapMm, jakartaScale, variant, borderMm, locationKey, locationText: location.text, divider, dividerMm,
+    weightKey, weightLabel, captionWeight, wordmarkFontWeight: 400, wordmarkOutlineMm };
 }
 
 export function createSvg(layout, { background = 'transparent' } = {}) {
   if (!['transparent', 'white'].includes(background)) throw new TypeError('Unsupported background.');
   const { widthMm, heightMm, widthPx, heightPx, ink, paths } = layout;
   const rect = background === 'white' ? `<rect width="${number(widthPx)}" height="${number(heightPx)}" fill="#ffffff"/>` : '';
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="${SVG_NS}" width="${number(widthMm)}mm" height="${number(heightMm)}mm" viewBox="0 0 ${number(widthPx)} ${number(heightPx)}" role="img" aria-labelledby="stamp-title"><title id="stamp-title">Sweet Times — ${escapeXml(layout.locationText || 'JAKARTA')}${layout.divider ? ' — With divider' : ''}</title>${rect}<g fill="${escapeXml(ink)}" fill-rule="nonzero">${paths.map(({ d, id }) => `<path id="${id}" d="${d}"/>`).join('')}</g></svg>\n`;
+  const pathElements = paths.map(({ d, id, strokeWidth }) => {
+    const stroke = strokeWidth > 0 ? ` stroke="${escapeXml(ink)}" stroke-width="${number(strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"` : '';
+    return `<path id="${id}" d="${d}"${stroke}/>`;
+  }).join('');
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="${SVG_NS}" width="${number(widthMm)}mm" height="${number(heightMm)}mm" viewBox="0 0 ${number(widthPx)} ${number(heightPx)}" role="img" aria-labelledby="stamp-title"><title id="stamp-title">Sweet Times — ${escapeXml(layout.locationText || 'JAKARTA')} — ${escapeXml(layout.weightLabel)}${layout.divider ? ' — With divider' : ''}</title>${rect}<g fill="${escapeXml(ink)}" fill-rule="nonzero">${pathElements}</g></svg>\n`;
 }
 
 /** A real vector PDF: absolute Bézier curves, no bitmap and no font references. */
@@ -209,19 +244,24 @@ export function createPdf(layout) {
   const pageHeight = heightMm * MM_TO_PT;
   const scale = pageWidth / widthPx;
   const rgb = [1, 3, 5].map((index) => parseInt(ink.slice(index, index + 2), 16) / 255);
-  const draw = paths.map(({ commands }) => commands.map(([op, ...v]) => {
-    if (op === 'Z') return 'h';
-    const pdfOp = { M: 'm', L: 'l', C: 'c' }[op];
-    if (!pdfOp) throw new Error(`Unsupported vector command ${op}`);
-    return `${v.map(number).join(' ')} ${pdfOp}`;
-  }).join('\n') + '\nf').join('\n');
-  const stream = `q\n${number(scale)} 0 0 ${number(-scale)} 0 ${number(pageHeight)} cm\n${rgb.map(number).join(' ')} rg\n${draw}\nQ\n`;
+  const draw = paths.map(({ commands, strokeWidth }) => {
+    const operators = commands.map(([op, ...v]) => {
+      if (op === 'Z') return 'h';
+      const pdfOp = { M: 'm', L: 'l', C: 'c' }[op];
+      if (!pdfOp) throw new Error(`Unsupported vector command ${op}`);
+      return `${v.map(number).join(' ')} ${pdfOp}`;
+    }).join('\n');
+    return strokeWidth > 0
+      ? `q\n${number(strokeWidth)} w\n1 j\n1 J\n${operators}\nB\nQ`
+      : `${operators}\nf`;
+  }).join('\n');
+  const stream = `q\n${number(scale)} 0 0 ${number(-scale)} 0 ${number(pageHeight)} cm\n${rgb.map(number).join(' ')} rg\n${rgb.map(number).join(' ')} RG\n${draw}\nQ\n`;
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${number(pageWidth)} ${number(pageHeight)}] /Resources << >> /Contents 4 0 R >>`,
     `<< /Length ${encode(stream).length} >>\nstream\n${stream}endstream`,
-    `<< /Title ${pdfUnicodeString('Sweet Times - ' + (layout.locationText || 'JAKARTA') + (layout.divider ? ' - With divider' : ''))} /Creator (Sweet Times Stamp) /Subject (Outlined stamp artwork) >>`,
+    `<< /Title ${pdfUnicodeString('Sweet Times - ' + (layout.locationText || 'JAKARTA') + ' - ' + layout.weightLabel + (layout.divider ? ' - With divider' : ''))} /Creator (Sweet Times Stamp) /Subject (Outlined stamp artwork) >>`,
   ];
   let pdf = '%PDF-1.4\n% Vector stamp\n';
   const offsets = [0];
@@ -345,7 +385,10 @@ export async function createRaster(layout, { type = 'png', background = 'transpa
   }
   context.scale(width / layout.widthPx, height / layout.heightPx);
   context.fillStyle = layout.ink;
-  for (const { commands } of layout.paths) {
+  context.strokeStyle = layout.ink;
+  context.lineJoin = 'round';
+  context.lineCap = 'round';
+  for (const { commands, strokeWidth } of layout.paths) {
     context.beginPath();
     for (const [op, ...v] of commands) {
       if (op === 'M') context.moveTo(...v);
@@ -354,6 +397,10 @@ export async function createRaster(layout, { type = 'png', background = 'transpa
       else if (op === 'Z') context.closePath();
     }
     context.fill('nonzero');
+    if (strokeWidth > 0) {
+      context.lineWidth = strokeWidth;
+      context.stroke();
+    }
   }
   const mime = type === 'jpeg' ? 'image/jpeg' : 'image/png';
   const blob = await new Promise((resolve, reject) => canvas.toBlob((result) => result ? resolve(result) : reject(new Error('Image export failed. Try a lower resolution.')), mime, 0.98));
