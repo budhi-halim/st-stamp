@@ -10,7 +10,16 @@ A static, mobile-first gallery for Sweet Times company stamps.
 - Oval
 - Double oval
 
-Every design uses the same two lines: **Sweet Times** in Playlist Script, and **JAKARTA** in Outfit Semibold.
+All five shapes are available in four text sets, for **20 designs**:
+
+| Set | Lower line |
+| --- | --- |
+| Original | JAKARTA |
+| Hyphen (U+002D) | JAKARTA - INDONESIA |
+| En dash (U+2013) | JAKARTA – INDONESIA |
+| Em dash (U+2014) | JAKARTA — INDONESIA |
+
+Every design uses **Sweet Times** in Playlist Script above the selected lower line in Outfit Semibold. The three country captions use identical glyph size and tracking so that only the actual dash changes. The original JAKARTA designs retain their original lettering and proportions. Download filenames identify the text set and shape.
 
 ## Downloads
 
@@ -29,4 +38,4 @@ GitHub Pages serves the root of the `gh-pages` branch. Apply future website upda
 - Playlist Script: the exact [font asset](https://stsweettimes.github.io/links/assets/fonts/Playlist%20Script.otf) used by the [Sweet Times links page](https://stsweettimes.github.io/links/). Font metadata credits Artimasa, 2016.
 - Outfit Semibold: the sans-serif family used by the same reference page; [Outfit source](https://github.com/Outfitio/Outfit-Fonts).
 
-The site distributes outlines for these fixed words, not font binaries. `scripts/build-geometry.py` records how the original font glyphs were shaped with HarfBuzz and converted into cubic paths using fontTools. `scripts/verify-exports.mjs` checks the five variants, alignment, clipping bounds, vector independence, and physical export dimensions.
+The site distributes outlines for these fixed words, not font binaries. `scripts/build-geometry.py` records how the original font glyphs were shaped with HarfBuzz and converted into cubic paths using fontTools. `scripts/verify-exports.mjs` checks all 20 designs, exact dash characters, alignment, clipping bounds, vector independence, and physical export dimensions.

@@ -7,6 +7,16 @@ const variants = [
   { id: 'oval', name: 'Oval' },
   { id: 'double-oval', name: 'Double oval' },
 ];
+const sets = [
+  { id: 'jakarta', key: 'jakarta', label: 'JAKARTA', caption: 'JAKARTA' },
+  { id: 'hyphen', key: 'hyphen', label: 'Hyphen', caption: 'JAKARTA - INDONESIA' },
+  { id: 'en-dash', key: 'enDash', label: 'En dash', caption: 'JAKARTA – INDONESIA' },
+  { id: 'em-dash', key: 'emDash', label: 'Em dash', caption: 'JAKARTA — INDONESIA' },
+];
+const designs = sets.flatMap(set => variants.map(variant => ({
+  id: `${set.id}-${variant.id}`, variant: variant.id, name: variant.name, set,
+})));
+const designsById = new Map(designs.map(design => [design.id, design]));
 const formats = [
   ['svg', 'SVG · vector'],
   ['pdf', 'PDF · vector'],
@@ -51,28 +61,29 @@ function updateSummary() {
   document.querySelector('#settings-summary').textContent = `${widthInput.value} mm · ${inkInput.selectedOptions[0].textContent} · ${dpiInput.value} DPI`;
 }
 
-function filename(variant, format, current, layout) {
+function filename(design, format, current) {
   const width = String(current.widthMm).replace('.', '-');
   const ink = { '#171717': 'black', '#193f69': 'blue', '#9b3037': 'red' }[current.ink] || current.ink.slice(1);
-  const base = `sweet-times-${variant}-${width}mm-${ink}`;
+  const caption = design.set.key === 'jakarta' ? '' : `jakarta-indonesia-${design.set.id}-`;
+  const base = `sweet-times-${caption}${design.variant}-${width}mm-${ink}`;
   if (format === 'svg' || format === 'pdf') return `${base}.${format}`;
   if (format === 'jpg') return `${base}-${current.dpi}dpi-white.jpg`;
   return `${base}-${current.dpi}dpi-${format === 'png-white' ? 'white' : 'transparent'}.png`;
 }
 
-function cacheKey(variant, format, current) {
-  return [variant, format, current.widthMm, current.ink, current.borderMm, current.dpi].join('|');
+function cacheKey(design, format, current) {
+  return [design.id, format, current.widthMm, current.ink, current.borderMm, current.dpi].join('|');
 }
 
-async function fileFor(variant, format, current) {
-  const key = cacheKey(variant, format, current);
+async function fileFor(design, format, current) {
+  const key = cacheKey(design, format, current);
   if (cache.has(key)) return cache.get(key);
-  const layout = createLayout(geometry, { ...current, variant });
+  const layout = createLayout(geometry, { ...current, variant: design.variant, locationKey: design.set.key });
   let blob;
   if (format === 'svg') blob = new Blob([createSvg(layout)], { type: 'image/svg+xml' });
   else if (format === 'pdf') blob = new Blob([createPdf(layout)], { type: 'application/pdf' });
   else blob = await createRaster(layout, { type: format === 'jpg' ? 'jpeg' : 'png', background: format === 'png-transparent' ? 'transparent' : 'white', dpi: current.dpi });
-  const file = { blob, filename: filename(variant, format, current, layout) };
+  const file = { blob, filename: filename(design, format, current) };
   cache.set(key, file);
   return file;
 }
@@ -82,11 +93,11 @@ async function prepareSelected() {
   const ticket = ++generation;
   if (!geometry || !widthInput.checkValidity()) return;
   const current = state();
-  for (const variant of variants) {
+  for (const design of designs) {
     if (ticket !== generation) return;
-    const card = document.querySelector(`[data-variant="${variant.id}"]`);
+    const card = document.querySelector(`[data-design="${design.id}"]`);
     const format = card.querySelector('select').value;
-    try { await fileFor(variant.id, format, current); }
+    try { await fileFor(design, format, current); }
     catch { /* A requested download displays the actionable error. */ }
   }
 }
@@ -108,16 +119,16 @@ function renderPreviews() {
   document.querySelector('#ink-sample').style.backgroundColor = current.ink;
   updateSummary();
   try {
-    for (const variant of variants) {
-      const layout = createLayout(geometry, { ...current, variant: variant.id });
-      layouts.set(variant.id, layout);
-      const card = document.querySelector(`[data-variant="${variant.id}"]`);
+    for (const design of designs) {
+      const layout = createLayout(geometry, { ...current, variant: design.variant, locationKey: design.set.key });
+      layouts.set(design.id, layout);
+      const card = document.querySelector(`[data-design="${design.id}"]`);
       // Preview and every export share the same paths and layout.
       card.querySelector('.stamp-preview').innerHTML = createSvg(layout)
         .replace(/<\?xml[^>]*>\s*/, '')
-        .replace('id="stamp-title"', `id="stamp-title-${variant.id}"`)
-        .replace('aria-labelledby="stamp-title"', `aria-labelledby="stamp-title-${variant.id}"`)
-        .replace(/id="(wordmark|location|border|inner-border)"/g, (_, id) => `id="${id}-${variant.id}"`);
+        .replace('id="stamp-title"', `id="stamp-title-${design.id}"`)
+        .replace('aria-labelledby="stamp-title"', `aria-labelledby="stamp-title-${design.id}"`)
+        .replace(/id="(wordmark|location|border|inner-border)"/g, (_, id) => `id="${id}-${design.id}"`);
       card.querySelector('.dimensions').textContent = `${current.widthMm} × ${layout.heightMm.toFixed(1)} mm`;
       card.querySelector('.download-button').disabled = false;
     }
@@ -127,16 +138,18 @@ function renderPreviews() {
 }
 
 function buildCards() {
-  gallery.innerHTML = variants.map((variant, index) => `
-    <article class="stamp-card" data-variant="${variant.id}" aria-labelledby="title-${variant.id}">
-      <div class="card-header"><h2 id="title-${variant.id}">${variant.name}</h2><span class="card-number" aria-hidden="true">${String(index + 1).padStart(2, '0')}</span></div>
-      <div class="stamp-preview" role="img" aria-label="${variant.name} Sweet Times stamp with JAKARTA below"></div>
+  gallery.innerHTML = sets.map(set => `
+    <header class="set-header" id="set-${set.id}"><h2>${set.caption}</h2>${set.key === 'jakarta' ? '' : `<span>${set.label}</span>`}</header>
+    ${designs.filter(design => design.set === set).map(design => `
+    <article class="stamp-card" data-design="${design.id}" data-variant="${design.variant}" data-location="${set.key}" aria-labelledby="title-${design.id}">
+      <div class="card-header"><h3 id="title-${design.id}">${design.name}</h3><span class="card-number" aria-hidden="true">${String(designs.indexOf(design) + 1).padStart(2, '0')}</span></div>
+      <div class="stamp-preview" role="img" aria-label="${design.name} Sweet Times stamp with ${set.caption} below"></div>
       <p class="dimensions"></p>
       <div class="download-area">
-        <div class="select-field"><label class="visually-hidden" for="format-${variant.id}">Download format for ${variant.name}</label><select id="format-${variant.id}" class="format-select">${formats.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
-        <button type="button" class="download-button" aria-label="Download ${variant.name} stamp">${downloadIcon}<span>Download</span></button>
+        <div class="select-field"><label class="visually-hidden" for="format-${design.id}">Download format for ${set.label} ${design.name}</label><select id="format-${design.id}" class="format-select">${formats.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
+        <button type="button" class="download-button" aria-label="Download ${set.label} ${design.name} stamp">${downloadIcon}<span>Download</span></button>
       </div>
-    </article>`).join('');
+    </article>`).join('')}`).join('');
   gallery.setAttribute('aria-busy', 'false');
 }
 
@@ -148,25 +161,25 @@ gallery.addEventListener('click', async event => {
   const button = event.target.closest('.download-button');
   if (!button || button.disabled || !geometry) return;
   const card = button.closest('.stamp-card');
-  const variant = card.dataset.variant;
+  const design = designsById.get(card.dataset.design);
   const format = card.querySelector('select').value;
   const current = state();
-  const key = cacheKey(variant, format, current);
+  const key = cacheKey(design, format, current);
   showError('');
   // A cached file downloads synchronously in the original tap event.
   if (cache.has(key)) {
     const file = cache.get(key);
     downloadBlob(file.blob, file.filename);
-    flash(`${card.querySelector('h2').textContent} · ${formats.find(([value]) => value === format)[1]}`);
+    flash(`${design.set.label} · ${design.name} · ${formats.find(([value]) => value === format)[1]}`);
     return;
   }
   button.disabled = true;
   button.setAttribute('aria-busy', 'true');
   button.querySelector('span').textContent = 'Preparing…';
   try {
-    const file = await fileFor(variant, format, current);
+    const file = await fileFor(design, format, current);
     downloadBlob(file.blob, file.filename);
-    flash(`${card.querySelector('h2').textContent} · ${formats.find(([value]) => value === format)[1]}`);
+    flash(`${design.set.label} · ${design.name} · ${formats.find(([value]) => value === format)[1]}`);
   } catch (error) {
     showError(`Could not download the file. ${error.message}`);
   } finally {

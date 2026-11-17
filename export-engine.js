@@ -5,6 +5,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 const encode = (value) => new TextEncoder().encode(value);
 const number = (value) => Number(value.toFixed(6)).toString();
 const escapeXml = (value) => String(value).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
+const pdfUnicodeString = (value) => '<FEFF' + Array.from(String(value), c => c.charCodeAt(0).toString(16).padStart(4, '0')).join('') + '>';
 
 function finite(value, name, min, max) {
   if (!Number.isFinite(value) || value < min || value > max) throw new RangeError(`${name} must be between ${min} and ${max}.`);
@@ -91,7 +92,7 @@ function outlineRing(kind, x, y, width, height, thickness, radius = 0) {
  */
 export function createLayout(geometry, {
   widthMm = 45, ink = '#171717', jakartaScale = 0.42, gapMm = 2, paddingMm = 1.5,
-  variant = 'borderless', borderMm = 0.35,
+  variant = 'borderless', borderMm = 0.35, locationKey = 'jakarta',
 } = {}) {
   finite(widthMm, 'Width', 10, 300);
   finite(jakartaScale, 'JAKARTA width', 0.1, 1);
@@ -99,6 +100,9 @@ export function createLayout(geometry, {
   finite(paddingMm, 'Padding', 0, 30);
   finite(borderMm, 'Border thickness', 0.1, 2);
   if (!['borderless', 'rectangle', 'rounded', 'oval', 'double-oval'].includes(variant)) throw new TypeError('Unsupported stamp variant.');
+  if (!['jakarta', 'hyphen', 'enDash', 'emDash'].includes(locationKey)) throw new TypeError('Unsupported caption.');
+  const location = geometry.locations?.[locationKey] || (locationKey === 'jakarta' ? geometry.location : null);
+  if (!location?.commands) throw new Error('The stamp caption could not be loaded. Please reload the page.');
   if (paddingMm * 2 >= widthMm) throw new RangeError('Padding must be smaller than half the width.');
   ink = validateInk(ink);
   const widthPx = 1000;
@@ -116,9 +120,13 @@ export function createLayout(geometry, {
   if (scriptWidth <= 0) throw new RangeError('The width is too small for this border and padding.');
   const wordScale = scriptWidth / geometry.wordmark.width;
   const wordHeight = geometry.wordmark.height * wordScale;
-  const locationWidth = scriptWidth * jakartaScale;
-  const locationScale = locationWidth / geometry.location.width;
-  const locationHeight = geometry.location.height * locationScale;
+  // All three country captions use identical glyph size and tracking. Their
+  // visible widths differ only because of the chosen dash's actual width.
+  const locationScale = locationKey === 'jakarta'
+    ? scriptWidth * jakartaScale / location.width
+    : scriptWidth * 0.82 / Math.max(...['hyphen', 'enDash', 'emDash'].map(key => geometry.locations[key].width));
+  const locationWidth = location.width * locationScale;
+  const locationHeight = location.height * locationScale;
   const groupHeight = wordHeight + gapMm * unitsPerMm + locationHeight;
   // The text bounding rectangle fits inside an inset ellipse. Its half-width
   // occupies 80% of the inner radius, so the required half-height is h / 0.6.
@@ -130,7 +138,7 @@ export function createLayout(geometry, {
   const heightPx = outerHeight + padding * 2;
   const rows = [
     { id: 'wordmark', data: geometry.wordmark, scale: wordScale, x: (widthPx - scriptWidth) / 2, y: groupY, width: scriptWidth, height: wordHeight },
-    { id: 'location', data: geometry.location, scale: locationScale, x: (widthPx - locationWidth) / 2, y: locationY, width: locationWidth, height: locationHeight },
+    { id: 'location', data: location, scale: locationScale, x: (widthPx - locationWidth) / 2, y: locationY, width: locationWidth, height: locationHeight },
   ];
   const paths = rows.map(({ id, data, scale, x, y, width, height }) => {
     const commands = transformCommands(data.commands, scale, x, y);
@@ -147,14 +155,14 @@ export function createLayout(geometry, {
       paths.splice(1, 0, { id: 'inner-border', commands: inner, d: pathData(inner), bounds: { x: padding + inset, y: padding + inset, width: outerWidth - 2 * inset, height: outerHeight - 2 * inset } });
     }
   }
-  return { widthMm, heightMm: heightPx / unitsPerMm, widthPx, heightPx, ink, paths, paddingMm, gapMm, jakartaScale, variant, borderMm };
+  return { widthMm, heightMm: heightPx / unitsPerMm, widthPx, heightPx, ink, paths, paddingMm, gapMm, jakartaScale, variant, borderMm, locationKey, locationText: location.text };
 }
 
 export function createSvg(layout, { background = 'transparent' } = {}) {
   if (!['transparent', 'white'].includes(background)) throw new TypeError('Unsupported background.');
   const { widthMm, heightMm, widthPx, heightPx, ink, paths } = layout;
   const rect = background === 'white' ? `<rect width="${number(widthPx)}" height="${number(heightPx)}" fill="#ffffff"/>` : '';
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="${SVG_NS}" width="${number(widthMm)}mm" height="${number(heightMm)}mm" viewBox="0 0 ${number(widthPx)} ${number(heightPx)}" role="img" aria-labelledby="stamp-title"><title id="stamp-title">Sweet Times — JAKARTA</title>${rect}<g fill="${escapeXml(ink)}" fill-rule="nonzero">${paths.map(({ d, id }) => `<path id="${id}" d="${d}"/>`).join('')}</g></svg>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="${SVG_NS}" width="${number(widthMm)}mm" height="${number(heightMm)}mm" viewBox="0 0 ${number(widthPx)} ${number(heightPx)}" role="img" aria-labelledby="stamp-title"><title id="stamp-title">Sweet Times — ${escapeXml(layout.locationText || 'JAKARTA')}</title>${rect}<g fill="${escapeXml(ink)}" fill-rule="nonzero">${paths.map(({ d, id }) => `<path id="${id}" d="${d}"/>`).join('')}</g></svg>\n`;
 }
 
 /** A real vector PDF: absolute Bézier curves, no bitmap and no font references. */
@@ -176,7 +184,7 @@ export function createPdf(layout) {
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${number(pageWidth)} ${number(pageHeight)}] /Resources << >> /Contents 4 0 R >>`,
     `<< /Length ${encode(stream).length} >>\nstream\n${stream}endstream`,
-    '<< /Title (Sweet Times - JAKARTA) /Creator (Sweet Times Stamp) /Subject (Outlined stamp artwork) >>',
+    `<< /Title ${pdfUnicodeString('Sweet Times - ' + (layout.locationText || 'JAKARTA'))} /Creator (Sweet Times Stamp) /Subject (Outlined stamp artwork) >>`,
   ];
   let pdf = '%PDF-1.4\n% Vector stamp\n';
   const offsets = [0];

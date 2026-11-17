@@ -34,34 +34,83 @@ function trace(commands) {
 }
 
 const variants = ['borderless', 'rectangle', 'rounded', 'oval', 'double-oval'];
-for (const variant of variants) {
-  const layout = engine.createLayout(geometry, { variant });
-  for (const path of layout.paths) {
-    for (const [x, y] of trace(path.commands)) {
-      assert(Number.isFinite(x) && Number.isFinite(y));
-      assert(x >= -0.001 && x <= layout.widthPx + 0.001, `${variant}: x clipping`);
-      assert(y >= -0.001 && y <= layout.heightPx + 0.001, `${variant}: y clipping`);
-    }
+const locations = [
+  ['jakarta', 'JAKARTA'],
+  ['hyphen', 'JAKARTA - INDONESIA'],
+  ['enDash', 'JAKARTA \u2013 INDONESIA'],
+  ['emDash', 'JAKARTA \u2014 INDONESIA'],
+];
+const pathOutputs = new Set();
+const scalesByVariant = new Map();
+
+function pdfTitle(pdfText) {
+  const hex = pdfText.match(/\/Title\s*<([0-9a-f]+)>/i);
+  if (hex) {
+    const bytes = Uint8Array.from(Buffer.from(hex[1], 'hex'));
+    assert(bytes[0] === 0xfe && bytes[1] === 0xff, 'Unicode PDF title must identify UTF-16BE');
+    return new TextDecoder('utf-16be').decode(bytes.subarray(2));
   }
-  for (const id of ['wordmark', 'location']) {
-    const { bounds } = layout.paths.find((p) => p.id === id);
-    assert(Math.abs(bounds.x + bounds.width / 2 - layout.widthPx / 2) < 1e-6, 'Text must be geometrically centered');
-  }
-  const svg = engine.createSvg(layout);
-  assert(!/<(?:text|image)\b|@font-face|font-family|href=/i.test(svg), 'SVG must be independent path artwork');
-  assert(!svg.includes('<rect'), 'Transparent SVG must not have a white background');
-  assert(engine.createSvg(layout, { background: 'white' }).includes('<rect'));
-  const pdf = engine.createPdf(layout);
-  const pdfText = new TextDecoder().decode(pdf);
-  assert(pdfText.startsWith('%PDF-1.4'));
-  assert(!/\/Subtype\s*\/Image|\/Font\b/.test(pdfText), 'PDF must contain outlines, not fonts or images');
-  for (const dpi of [300, 600, 1200]) {
-    const dimensions = engine.rasterDimensions(layout, dpi);
-    assert.equal(dimensions.width, Math.round(45 / 25.4 * dpi));
-    assert.equal(dimensions.height, Math.round(layout.heightMm / 25.4 * dpi));
-  }
-  await writeFile(join(directory, `${variant}.svg`), svg);
-  await writeFile(join(directory, `${variant}.pdf`), pdf);
-  console.log(`${variant}: ${layout.widthMm} × ${layout.heightMm.toFixed(2)} mm; outlined SVG/PDF verified`);
+  const literal = pdfText.match(/\/Title\s*\(((?:\\.|[^\\)])*)\)/s);
+  assert(literal, 'PDF title is required');
+  assert(!/[^\x00-\x7f]/.test(literal[1]), 'Non-ASCII PDF titles must use a Unicode text string');
+  return literal[1].replace(/\\([()\\])/g, '$1');
 }
+
+assert.deepEqual(geometry.locations.jakarta, geometry.location, 'Original caption geometry must remain available');
+for (const [locationKey, caption] of locations) {
+  assert.equal(geometry.locations[locationKey].text, caption, 'Wrong caption or dash code point');
+  for (const variant of variants) {
+    const name = `${locationKey}-${variant}`;
+    const layout = engine.createLayout(geometry, { variant, locationKey });
+    assert.equal(layout.locationText, caption);
+    assert(Number.isFinite(layout.widthMm) && layout.widthMm > 0);
+    assert(Number.isFinite(layout.heightMm) && layout.heightMm > 0);
+    for (const path of layout.paths) {
+      for (const [x, y] of trace(path.commands)) {
+        assert(Number.isFinite(x) && Number.isFinite(y));
+        assert(x >= -0.001 && x <= layout.widthPx + 0.001, `${name}: x clipping`);
+        assert(y >= -0.001 && y <= layout.heightPx + 0.001, `${name}: y clipping`);
+      }
+    }
+    for (const id of ['wordmark', 'location']) {
+      const { bounds } = layout.paths.find((p) => p.id === id);
+      assert(Math.abs(bounds.x + bounds.width / 2 - layout.widthPx / 2) < 1e-6, `${name}: text must be centered`);
+    }
+    const word = layout.paths.find((p) => p.id === 'wordmark').bounds;
+    const location = layout.paths.find((p) => p.id === 'location').bounds;
+    assert(location.y > word.y + word.height, `${name}: caption overlaps wordmark`);
+    if (locationKey !== 'jakarta') {
+      const scale = location.height / geometry.locations[locationKey].height;
+      const previous = scalesByVariant.get(variant);
+      if (previous !== undefined) assert(Math.abs(scale - previous) < 1e-9, `${name}: dash comparisons must retain the same type size`);
+      scalesByVariant.set(variant, scale);
+    }
+    const svg = engine.createSvg(layout);
+    assert(!/<(?:text|image)\b|@font-face|font-family|href=/i.test(svg), 'SVG must be independent path artwork');
+    assert(!svg.includes('<rect'), 'Transparent SVG must not have a white background');
+    assert(engine.createSvg(layout, { background: 'white' }).includes('<rect'));
+    assert(svg.match(/<title\b[^>]*>(.*?)<\/title>/s)?.[1].includes(caption), `${name}: incorrect SVG title`);
+    const pdf = engine.createPdf(layout);
+    const pdfText = new TextDecoder().decode(pdf);
+    assert(pdfText.startsWith('%PDF-1.4'));
+    assert(!/\/Subtype\s*\/Image|\/Font\b/.test(pdfText), 'PDF must contain outlines, not fonts or images');
+    assert(pdfTitle(pdfText).endsWith(caption), `${name}: incorrect PDF title`);
+    const mediaBox = pdfText.match(/\/MediaBox\s*\[0 0 ([\d.]+) ([\d.]+)\]/);
+    assert(mediaBox, `${name}: missing physical page dimensions`);
+    assert(Math.abs(Number(mediaBox[1]) * 25.4 / 72 - layout.widthMm) < 1e-5);
+    assert(Math.abs(Number(mediaBox[2]) * 25.4 / 72 - layout.heightMm) < 1e-5);
+    pathOutputs.add(JSON.stringify(layout.paths.map((path) => path.commands)));
+    await writeFile(join(directory, `${name}.svg`), svg);
+    await writeFile(join(directory, `${name}.pdf`), pdf);
+    console.log(`${name}: ${layout.widthMm} × ${layout.heightMm.toFixed(2)} mm; outlined SVG/PDF verified`);
+  }
+}
+assert.equal(pathOutputs.size, 20, 'All twenty designs must have distinct artwork, not only distinct labels');
+const rasterLayout = engine.createLayout(geometry, { variant: 'double-oval', locationKey: 'emDash' });
+for (const dpi of [300, 600, 1200]) {
+  const dimensions = engine.rasterDimensions(rasterLayout, dpi);
+  assert.equal(dimensions.width, Math.round(rasterLayout.widthMm / 25.4 * dpi));
+  assert.equal(dimensions.height, Math.round(rasterLayout.heightMm / 25.4 * dpi));
+}
+console.log('20 distinct designs verified, including exact hyphen/en-dash/em-dash captions and consistent comparison type sizes.');
 console.log(`Export samples: ${directory}`);

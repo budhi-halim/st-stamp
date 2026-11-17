@@ -143,15 +143,25 @@ def main():
     parser.add_argument("--fonts", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    location_font = args.fonts / "outfit-semibold.ttf"
+    locations = {
+        "jakarta": outline(location_font, "JAKARTA", 0.16),
+        "hyphen": outline(location_font, "JAKARTA - INDONESIA", 0.16),
+        "enDash": outline(location_font, "JAKARTA \u2013 INDONESIA", 0.16),
+        "emDash": outline(location_font, "JAKARTA \u2014 INDONESIA", 0.16),
+    }
     payload = {
         "version": 1,
         "wordmark": outline(args.fonts / "playlist-script.otf", "Sweet Times"),
-        "location": outline(args.fonts / "outfit-semibold.ttf", "JAKARTA", 0.16),
+        "location": locations["jakarta"],
+        "locations": locations,
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, separators=(",", ":")) + "\n")
-    print(json.dumps({key: {k: v for k, v in data.items() if k != "commands"}
-                      for key, data in payload.items() if isinstance(data, dict)}))
+    summary = lambda data: {k: v for k, v in data.items() if k != "commands"}
+    print(json.dumps({"wordmark": summary(payload["wordmark"]),
+                      "locations": {key: summary(data) for key, data in locations.items()}},
+                     ensure_ascii=False))
 
 
 if __name__ == "__main__":
