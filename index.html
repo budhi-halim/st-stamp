@@ -7,8 +7,8 @@
   <meta name="description" content="Sweet Times stamp designs with Store A and Store B size options, standard and bold lettering, and SVG, PDF, PNG and JPG downloads.">
   <title>Sweet Times — Stamps</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="./styles.css?v=store-sizes-1">
-  <script type="module" src="./app.js?v=store-sizes-1"></script>
+  <link rel="stylesheet" href="./styles.css?v=store-filter-1">
+  <script type="module" src="./app.js?v=store-filter-1"></script>
 </head>
 <body>
   <main>
@@ -39,6 +39,14 @@
     </form>
     </details>
 
+    <section class="availability-controls" aria-label="Store size availability">
+      <div class="field">
+        <label for="size-availability">Size availability</label>
+        <div class="select-field"><select id="size-availability" aria-describedby="availability-status" disabled><option value="all">All sizes</option><option value="shared">Both stores</option><option value="a-only">Store A only</option><option value="b-only">Store B only</option></select></div>
+      </div>
+      <p id="availability-status" role="status" aria-live="polite" aria-atomic="true"></p>
+    </section>
+
     <nav class="collection-navigation" aria-label="Stamp collections">
       <a href="#without-divider"><strong>Standard</strong><span>Without divider</span></a>
       <a href="#with-divider"><strong>Standard</strong><span>With divider</span></a>
@@ -54,7 +62,7 @@
           <thead><tr><th scope="col">Shape</th><th scope="col">Store A</th><th scope="col">Store B</th></tr></thead>
           <tbody>
             <tr><th scope="row">Rectangle</th><td>7 sizes</td><td>19 sizes</td></tr>
-            <tr><th scope="row">Oval</th><td>35 × 24</td><td>Dimensions unconfirmed</td></tr>
+            <tr><th scope="row">Oval</th><td>35 × 24</td><td>Oval 1/45 and Oval 1/50<br>Printing dimensions unconfirmed</td></tr>
             <tr><th scope="row">Circle</th><td>Ø 25, 28, 35</td><td>Ø 23, 28, 35, 40, 45</td></tr>
             <tr><th scope="row">Square</th><td>30 × 30, 35 × 35</td><td>Not listed</td></tr>
           </tbody>

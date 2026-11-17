@@ -43,6 +43,11 @@ const inkInput = document.querySelector('#ink');
 const pixelInput = document.querySelector('#pixel-width');
 const borderInput = document.querySelector('#border');
 const checkerboard = document.querySelector('#checkerboard');
+const availabilityInput = document.querySelector('#size-availability');
+const availabilityStatus = document.querySelector('#availability-status');
+const availabilityValues = ['all', 'shared', 'a-only', 'b-only'];
+const requestedAvailability = new URL(location.href).searchParams.get('store');
+if (availabilityValues.includes(requestedAvailability)) availabilityInput.value = requestedAvailability;
 const errorMessage = document.querySelector('#page-error');
 const toast = document.querySelector('#toast');
 const layouts = new Map();
@@ -70,6 +75,61 @@ function showError(message) {
 
 function updateSummary() {
   document.querySelector('#settings-summary').textContent = `${inkInput.selectedOptions[0].textContent} · ${Number(pixelInput.value).toLocaleString('en-US')} px+`;
+}
+
+function availableSizes(design) {
+  return sizesForVariant(design.variant).filter(size => {
+    if (availabilityInput.value === 'shared') return size.stores.length === 2;
+    if (availabilityInput.value === 'a-only') return size.stores.length === 1 && size.stores[0] === 'A';
+    if (availabilityInput.value === 'b-only') return size.stores.length === 1 && size.stores[0] === 'B';
+    return true;
+  });
+}
+
+function preferredSize(design, choices) {
+  const original = getStampSize(design.variant, DEFAULT_SIZE_IDS[design.variant]);
+  const ratio = original.widthMm / original.heightMm;
+  const area = original.widthMm * original.heightMm;
+  return [...choices].sort((a, b) =>
+    Math.abs(a.widthMm / a.heightMm - ratio) - Math.abs(b.widthMm / b.heightMm - ratio)
+    || Math.abs(a.widthMm * a.heightMm - area) - Math.abs(b.widthMm * b.heightMm - area)
+    || a.id.localeCompare(b.id))[0];
+}
+
+function applyAvailability() {
+  if (!geometry) return;
+  // Stop a previous prefetch pass before changing its visible set and sizes.
+  generation++;
+  const counts = new Map(collections.map(collection => [collection.id, 0]));
+  let visible = 0;
+  for (const design of designs) {
+    const card = document.querySelector(`[data-design="${design.id}"]`);
+    const choices = availableSizes(design);
+    card.hidden = choices.length === 0;
+    if (card.hidden) continue;
+    if (!choices.some(size => size.id === selectedSizes.get(design.id))) {
+      selectedSizes.set(design.id, preferredSize(design, choices).id);
+    }
+    const select = card.querySelector('.size-select');
+    if (select) select.innerHTML = sizeOptions(design, choices);
+    visible++;
+    counts.set(design.collection.id, counts.get(design.collection.id) + 1);
+  }
+  for (const collection of collections) {
+    document.querySelector(`#${collection.id} > span`).textContent = `${counts.get(collection.id)} designs`;
+  }
+  const descriptions = {
+    all: '20 rectangle sizes and 1 confirmed oval size.',
+    shared: '6 rectangle sizes listed by both stores.',
+    'a-only': '1 rectangle size and 1 confirmed oval size listed only in Store A’s chart. Store B oval printing dimensions are unconfirmed.',
+    'b-only': '13 rectangle sizes. Store B also lists Oval 1/45 and Oval 1/50; their printing dimensions are unconfirmed.',
+  };
+  availabilityStatus.textContent = `${visible} designs · ${descriptions[availabilityInput.value]}`;
+  const url = new URL(location.href);
+  if (availabilityInput.value === 'all') url.searchParams.delete('store');
+  else url.searchParams.set('store', availabilityInput.value);
+  history.replaceState(history.state, '', url);
+  renderPreviews();
 }
 
 function filename(design, format, current, size) {
@@ -108,6 +168,7 @@ async function prepareSelected() {
   for (const design of designs) {
     if (ticket !== generation) return;
     const card = document.querySelector(`[data-design="${design.id}"]`);
+    if (card.hidden) continue;
     const format = card.querySelector('.format-select').value;
     try { await fileFor(design, format, current); }
     catch { /* A requested download displays the actionable error. */ }
@@ -127,10 +188,11 @@ function renderPreviews(onlyDesign = null) {
   updateSummary();
   try {
     for (const design of onlyDesign ? [onlyDesign] : designs) {
+      const card = document.querySelector(`[data-design="${design.id}"]`);
+      if (card.hidden) continue;
       const size = getStampSize(design.variant, selectedSizes.get(design.id));
       const layout = createLayout(geometry, { ...current, variant: design.variant, sizeId: size.id, locationKey: design.set.key, divider: design.collection.divider, weightKey: design.collection.weightKey });
       layouts.set(design.id, layout);
-      const card = document.querySelector(`[data-design="${design.id}"]`);
       card.dataset.size = size.id;
       card.dataset.stores = size.stores.join(' ');
       // Preview and every export share the same paths and layout.
@@ -149,14 +211,17 @@ function renderPreviews(onlyDesign = null) {
   } catch (error) { showError(error.message); }
 }
 
-function sizeControl(design) {
-  const choices = sizesForVariant(design.variant);
-  if (choices.length === 1) return '';
+function sizeOptions(design, choices) {
   const groups = [['A B', 'Store A + Store B'], ['A', 'Store A'], ['B', 'Store B']];
-  return `<div class="size-field"><label for="size-${design.id}">Stamp size</label><div class="select-field"><select id="size-${design.id}" class="size-select" aria-label="Stamp size for ${design.collection.weightLabel} ${design.set.label} ${design.name}${design.collection.divider ? ' with divider' : ''}">${groups.map(([stores, label]) => {
+  return groups.map(([stores, label]) => {
     const sizes = choices.filter(size => size.stores.join(' ') === stores);
     return sizes.length ? `<optgroup label="${label}">${sizes.map(size => `<option value="${size.id}"${selectedSizes.get(design.id) === size.id ? ' selected' : ''}>${size.widthMm} × ${size.heightMm} mm</option>`).join('')}</optgroup>` : '';
-  }).join('')}</select></div></div>`;
+  }).join('');
+}
+
+function sizeControl(design) {
+  if (sizesForVariant(design.variant).length === 1) return '';
+  return `<div class="size-field"><label for="size-${design.id}">Stamp size</label><div class="select-field"><select id="size-${design.id}" class="size-select" aria-label="Stamp size for ${design.collection.weightLabel} ${design.set.label} ${design.name}${design.collection.divider ? ' with divider' : ''}">${sizeOptions(design, availableSizes(design))}</select></div></div>`;
 }
 
 function buildCards() {
@@ -221,21 +286,23 @@ gallery.addEventListener('click', async event => {
 });
 
 form.addEventListener('submit', event => event.preventDefault());
+availabilityInput.addEventListener('change', applyAvailability);
 for (const input of [inkInput, borderInput]) input.addEventListener('input', () => renderPreviews());
 pixelInput.addEventListener('change', () => { updateSummary(); cache.clear(); schedulePreparation(); });
 checkerboard.addEventListener('change', () => gallery.classList.toggle('checkerboard', checkerboard.checked));
 document.querySelector('#reset').addEventListener('click', () => {
   form.reset();
+  availabilityInput.value = 'all';
   for (const design of designs) selectedSizes.set(design.id, DEFAULT_SIZE_IDS[design.variant]);
-  for (const select of gallery.querySelectorAll('.size-select')) select.value = selectedSizes.get(select.closest('.stamp-card').dataset.design);
   gallery.classList.remove('checkerboard');
-  renderPreviews();
+  applyAvailability();
 });
 
 try {
   geometry = await loadGeometry();
   buildCards();
-  renderPreviews();
+  availabilityInput.disabled = false;
+  applyAvailability();
   // Section links also work when the page opens before the lettering is loaded.
   if (location.hash) requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: 'start' }));
 } catch (error) {
