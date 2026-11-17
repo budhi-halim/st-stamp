@@ -50,6 +50,7 @@ const locations = [
 ];
 const pathOutputs = new Set();
 const scalesByVariant = new Map();
+let dividerDesigns = 0;
 
 function near(actual, expected, message, tolerance = 1e-6) {
   assert(Math.abs(actual - expected) < tolerance, `${message}: ${actual} ≠ ${expected}`);
@@ -87,6 +88,27 @@ function checkLayout(layout, name) {
   const word = layout.paths.find((p) => p.id === 'wordmark').bounds;
   const location = layout.paths.find((p) => p.id === 'location').bounds;
   assert(location.y > word.y + word.height, `${name}: caption overlaps wordmark`);
+  const dividerPaths = layout.paths.filter((p) => p.id === 'divider');
+  assert.equal(dividerPaths.length, layout.divider ? 1 : 0, `${name}: incorrect divider count`);
+  if (layout.divider) {
+    const divider = dividerPaths[0];
+    const line = divider.bounds;
+    assert(line.width > line.height && line.width <= word.width, `${name}: divider must be horizontal and fit the lettering width`);
+    near(line.height * layout.widthMm / layout.widthPx, 0.25, `${name}: divider thickness`);
+    near(line.x + line.width / 2, layout.widthPx / 2, `${name}: divider must be centered`);
+    near(line.y + line.height / 2, (word.y + word.height + location.y) / 2, `${name}: divider must be centered between the text lines`);
+    assert(line.y > word.y + word.height && line.y + line.height < location.y, `${name}: divider touches lettering`);
+    assert.deepEqual(divider.commands.map(([op]) => op), ['M', 'L', 'L', 'L', 'Z'], `${name}: divider must be a closed filled rectangle`);
+    const points = pointsByPath.get('divider');
+    const xs = [...new Set(points.map(([x]) => x))];
+    const ys = [...new Set(points.map(([, y]) => y))];
+    assert.equal(xs.length, 2, `${name}: divider edges are not vertical`);
+    assert.equal(ys.length, 2, `${name}: divider edges are not horizontal`);
+    near(Math.min(...xs), line.x, `${name}: divider left edge`);
+    near(Math.max(...xs), line.x + line.width, `${name}: divider right edge`);
+    near(Math.min(...ys), line.y, `${name}: divider top edge`);
+    near(Math.max(...ys), line.y + line.height, `${name}: divider bottom edge`);
+  }
   if (layout.locationKey !== 'jakarta') {
     const scale = location.height / geometry.locations[layout.locationKey].height;
     const key = `${layout.variant}|${layout.borderMm}`;
@@ -102,13 +124,13 @@ function checkLayout(layout, name) {
   const border = layout.borderMm * layout.widthPx / layout.widthMm;
   const left = b.x + border, right = b.x + b.width - border;
   const top = b.y + border, bottom = b.y + b.height - border;
-  for (const id of ['wordmark', 'location']) {
+  for (const id of ['wordmark', 'location', ...(layout.divider ? ['divider'] : [])]) {
     for (const [x, y] of pointsByPath.get(id)) {
-      assert(x > left && x < right && y > top && y < bottom, `${name}: lettering touches the frame`);
+      assert(x > left && x < right && y > top && y < bottom, `${name}: ${id} touches the frame`);
       if (layout.variant === 'oval' || layout.variant === 'double-oval') {
         const nx = (x - (left + right) / 2) / ((right - left) / 2);
         const ny = (y - (top + bottom) / 2) / ((bottom - top) / 2);
-        assert(nx * nx + ny * ny < 1, `${name}: lettering crosses the inner ellipse`);
+        assert(nx * nx + ny * ny < 1, `${name}: ${id} crosses the inner ellipse`);
       }
     }
   }
@@ -136,46 +158,59 @@ for (const variant of variants) {
 for (const [locationKey, caption] of locations) {
   assert.equal(geometry.locations[locationKey].text, caption, 'Wrong caption or dash code point');
   for (const variant of variants) {
-    const name = `${locationKey}-${variant}`;
-    const layout = engine.createLayout(geometry, { variant, locationKey });
-    assert.equal(layout.locationText, caption);
-    checkLayout(layout, name);
-    // These controls change the available text area, so verify both extremes.
-    if (variant !== 'borderless') for (const borderMm of [0.25, 0.5]) {
-      checkLayout(engine.createLayout(geometry, { variant, locationKey, borderMm }), `${name}-${borderMm}mm`);
+    const plain = engine.createLayout(geometry, { variant, locationKey });
+    for (const divider of [false, true]) {
+      const name = `${locationKey}-${variant}${divider ? '-divider' : ''}`;
+      const layout = engine.createLayout(geometry, { variant, locationKey, divider });
+      assert.equal(layout.locationText, caption);
+      assert.equal(layout.divider, divider, `${name}: incorrect divider flag`);
+      assert.deepEqual(layout.paths.filter((path) => path.id !== 'divider'), plain.paths, `${name}: adding a divider must not alter existing artwork`);
+      if (divider) dividerDesigns++;
+      checkLayout(layout, name);
+      // These controls change the available text area, so verify both extremes.
+      if (variant !== 'borderless') for (const borderMm of [0.25, 0.5]) {
+        checkLayout(engine.createLayout(geometry, { variant, locationKey, borderMm, divider }), `${name}-${borderMm}mm`);
+      }
+      const svg = engine.createSvg(layout);
+      assert(!/<(?:text|image)\b|@font-face|font-family|href=/i.test(svg), 'SVG must be independent path artwork');
+      assert(!svg.includes('<rect'), 'Transparent SVG must not have a white background');
+      assert(engine.createSvg(layout, { background: 'white' }).includes('<rect'));
+      assert.equal(svg.includes('id="divider"'), divider, `${name}: SVG divider must match preview`);
+      assert.equal((svg.match(/<path\b/g) || []).length, layout.paths.length, `${name}: SVG must export every path`);
+      assert(svg.match(/<title\b[^>]*>(.*?)<\/title>/s)?.[1].includes(caption), `${name}: incorrect SVG title`);
+      assert.equal(svg.includes('With divider'), divider, `${name}: SVG divider title`);
+      const svgSize = svg.match(/<svg\b[^>]*\bwidth="([\d.]+)mm"\s+height="([\d.]+)mm"/);
+      assert(svgSize, `${name}: missing physical SVG dimensions`);
+      assert.equal(Number(svgSize[1]), expectedSizes[variant].widthMm);
+      assert.equal(Number(svgSize[2]), expectedSizes[variant].heightMm);
+      const pdf = engine.createPdf(layout);
+      const pdfText = new TextDecoder().decode(pdf);
+      assert(pdfText.startsWith('%PDF-1.4'));
+      assert(!/\/Subtype\s*\/Image|\/Font\b/.test(pdfText), 'PDF must contain outlines, not fonts or images');
+      assert.equal(pdfTitle(pdfText), `Sweet Times - ${caption}${divider ? ' - With divider' : ''}`, `${name}: incorrect PDF title`);
+      assert.equal((pdfText.match(/\nf\n/g) || []).length, layout.paths.length, `${name}: PDF must export every filled path`);
+      const mediaBox = pdfText.match(/\/MediaBox\s*\[0 0 ([\d.]+) ([\d.]+)\]/);
+      assert(mediaBox, `${name}: missing physical page dimensions`);
+      assert(Math.abs(Number(mediaBox[1]) * 25.4 / 72 - layout.widthMm) < 1e-5);
+      assert(Math.abs(Number(mediaBox[2]) * 25.4 / 72 - layout.heightMm) < 1e-5);
+      pathOutputs.add(JSON.stringify(layout.paths.map((path) => path.commands)));
+      await writeFile(join(directory, `${name}.svg`), svg);
+      await writeFile(join(directory, `${name}.pdf`), pdf);
+      console.log(`${name}: ${layout.widthMm} × ${layout.heightMm} mm (${expectedSizes[variant].ratio}); outlined SVG/PDF verified`);
     }
-    const svg = engine.createSvg(layout);
-    assert(!/<(?:text|image)\b|@font-face|font-family|href=/i.test(svg), 'SVG must be independent path artwork');
-    assert(!svg.includes('<rect'), 'Transparent SVG must not have a white background');
-    assert(engine.createSvg(layout, { background: 'white' }).includes('<rect'));
-    assert(svg.match(/<title\b[^>]*>(.*?)<\/title>/s)?.[1].includes(caption), `${name}: incorrect SVG title`);
-    const svgSize = svg.match(/<svg\b[^>]*\bwidth="([\d.]+)mm"\s+height="([\d.]+)mm"/);
-    assert(svgSize, `${name}: missing physical SVG dimensions`);
-    assert.equal(Number(svgSize[1]), expectedSizes[variant].widthMm);
-    assert.equal(Number(svgSize[2]), expectedSizes[variant].heightMm);
-    const pdf = engine.createPdf(layout);
-    const pdfText = new TextDecoder().decode(pdf);
-    assert(pdfText.startsWith('%PDF-1.4'));
-    assert(!/\/Subtype\s*\/Image|\/Font\b/.test(pdfText), 'PDF must contain outlines, not fonts or images');
-    assert(pdfTitle(pdfText).endsWith(caption), `${name}: incorrect PDF title`);
-    const mediaBox = pdfText.match(/\/MediaBox\s*\[0 0 ([\d.]+) ([\d.]+)\]/);
-    assert(mediaBox, `${name}: missing physical page dimensions`);
-    assert(Math.abs(Number(mediaBox[1]) * 25.4 / 72 - layout.widthMm) < 1e-5);
-    assert(Math.abs(Number(mediaBox[2]) * 25.4 / 72 - layout.heightMm) < 1e-5);
-    pathOutputs.add(JSON.stringify(layout.paths.map((path) => path.commands)));
-    await writeFile(join(directory, `${name}.svg`), svg);
-    await writeFile(join(directory, `${name}.pdf`), pdf);
-    console.log(`${name}: ${layout.widthMm} × ${layout.heightMm} mm (${expectedSizes[variant].ratio}); outlined SVG/PDF verified`);
   }
 }
-assert.equal(pathOutputs.size, 20, 'All twenty designs must have distinct artwork, not only distinct labels');
+assert.equal(pathOutputs.size, 40, 'All forty designs must have distinct artwork, not only distinct labels');
+assert.equal(dividerDesigns, 20, 'Exactly twenty designs must include the horizontal divider');
 // The three distinct catalogue ratios cover all five shapes.
 for (const variant of ['borderless', 'rectangle', 'oval']) {
   const rasterLayout = engine.createLayout(geometry, { variant, locationKey: 'emDash' });
+  const dividerRasterLayout = engine.createLayout(geometry, { variant, locationKey: 'emDash', divider: true });
   const [ratioWidth, ratioHeight] = expectedSizes[variant].ratio.split(':').map(Number);
   assert(engine.rasterDimensions(rasterLayout).width >= 4000, `${variant}: default export must stay high resolution`);
   for (const requestedWidth of [2000, 4000, 6000]) {
     const dimensions = engine.rasterDimensions(rasterLayout, requestedWidth);
+    assert.deepEqual(engine.rasterDimensions(dividerRasterLayout, requestedWidth), dimensions, `${variant}: divider must not change export resolution or size`);
     assert(Number.isInteger(dimensions.width) && Number.isInteger(dimensions.height));
     assert(dimensions.width >= requestedWidth, `${variant}: physical dimensions must not reduce pixel width`);
     assert(dimensions.width < requestedWidth + ratioWidth, `${variant}: excessive raster enlargement`);
@@ -184,5 +219,5 @@ for (const variant of ['borderless', 'rectangle', 'oval']) {
     near(dimensions.height * 25.4 / dimensions.dpi, rasterLayout.heightMm, `${variant}: raster physical height`);
   }
 }
-console.log('20 distinct designs verified: supplier dimensions and ratios, unstretched glyphs, exact dash captions, border clearance, and high-resolution raster sizes.');
+console.log('40 distinct designs verified: 20 unchanged originals and 20 centered dividers, supplier dimensions and ratios, unstretched glyphs, exact dash captions, border clearance, and high-resolution raster sizes.');
 console.log(`Export samples: ${directory}`);

@@ -103,11 +103,14 @@ function outlineRing(kind, x, y, width, height, thickness, radius = 0) {
  */
 export function createLayout(geometry, {
   ink = '#171717', jakartaScale = 0.42, gapMm = 2,
-  variant = 'borderless', borderMm = 0.35, locationKey = 'jakarta',
+  variant = 'borderless', borderMm = 0.35, locationKey = 'jakarta', divider = false,
 } = {}) {
   finite(jakartaScale, 'JAKARTA width', 0.1, 1);
   finite(gapMm, 'Line gap', 0, 30);
   finite(borderMm, 'Border thickness', 0.1, 2);
+  if (typeof divider !== 'boolean') throw new TypeError('Divider must be enabled or disabled.');
+  const dividerMm = divider ? 0.25 : 0;
+  if (divider && gapMm <= dividerMm) throw new RangeError('The line gap must be greater than 0.25 mm for a divider.');
   if (!Object.hasOwn(STAMP_SPECS, variant)) throw new TypeError('Unsupported stamp variant.');
   const { widthMm, heightMm, ratio } = STAMP_SPECS[variant];
   if (!['jakarta', 'hyphen', 'enDash', 'emDash'].includes(locationKey)) throw new TypeError('Unsupported caption.');
@@ -166,6 +169,16 @@ export function createLayout(geometry, {
     const commands = transformCommands(data.commands, scale, x, y);
     return { id, d: pathData(commands), commands, bounds: { x, y, width, height } };
   });
+  if (divider) {
+    // The rule sits within the existing line gap, so neither the lettering
+    // nor the frame moves. Filled geometry exports identically in all formats.
+    const width = scriptWidth * 0.76;
+    const height = dividerMm * unitsPerMm;
+    const x = (widthPx - width) / 2;
+    const y = groupY + wordHeight + (gap - height) / 2;
+    const commands = rectangle(x, y, width, height);
+    paths.splice(1, 0, { id: 'divider', commands, d: pathData(commands), bounds: { x, y, width, height } });
+  }
   if (variant !== 'borderless') {
     const radius = variant === 'rounded' ? Math.min(outerHeight * 0.2, 3.5 * unitsPerMm) : 0;
     const kind = isOval ? 'oval' : 'rectangle';
@@ -179,14 +192,14 @@ export function createLayout(geometry, {
   }
   return { widthMm, heightMm, ratio, widthPx, heightPx, ink, paths, insetFraction,
     marginsMm: { x: paddingX / unitsPerMm, y: paddingY / unitsPerMm },
-    gapMm, jakartaScale, variant, borderMm, locationKey, locationText: location.text };
+    gapMm, jakartaScale, variant, borderMm, locationKey, locationText: location.text, divider, dividerMm };
 }
 
 export function createSvg(layout, { background = 'transparent' } = {}) {
   if (!['transparent', 'white'].includes(background)) throw new TypeError('Unsupported background.');
   const { widthMm, heightMm, widthPx, heightPx, ink, paths } = layout;
   const rect = background === 'white' ? `<rect width="${number(widthPx)}" height="${number(heightPx)}" fill="#ffffff"/>` : '';
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="${SVG_NS}" width="${number(widthMm)}mm" height="${number(heightMm)}mm" viewBox="0 0 ${number(widthPx)} ${number(heightPx)}" role="img" aria-labelledby="stamp-title"><title id="stamp-title">Sweet Times — ${escapeXml(layout.locationText || 'JAKARTA')}</title>${rect}<g fill="${escapeXml(ink)}" fill-rule="nonzero">${paths.map(({ d, id }) => `<path id="${id}" d="${d}"/>`).join('')}</g></svg>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="${SVG_NS}" width="${number(widthMm)}mm" height="${number(heightMm)}mm" viewBox="0 0 ${number(widthPx)} ${number(heightPx)}" role="img" aria-labelledby="stamp-title"><title id="stamp-title">Sweet Times — ${escapeXml(layout.locationText || 'JAKARTA')}${layout.divider ? ' — With divider' : ''}</title>${rect}<g fill="${escapeXml(ink)}" fill-rule="nonzero">${paths.map(({ d, id }) => `<path id="${id}" d="${d}"/>`).join('')}</g></svg>\n`;
 }
 
 /** A real vector PDF: absolute Bézier curves, no bitmap and no font references. */
@@ -208,7 +221,7 @@ export function createPdf(layout) {
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${number(pageWidth)} ${number(pageHeight)}] /Resources << >> /Contents 4 0 R >>`,
     `<< /Length ${encode(stream).length} >>\nstream\n${stream}endstream`,
-    `<< /Title ${pdfUnicodeString('Sweet Times - ' + (layout.locationText || 'JAKARTA'))} /Creator (Sweet Times Stamp) /Subject (Outlined stamp artwork) >>`,
+    `<< /Title ${pdfUnicodeString('Sweet Times - ' + (layout.locationText || 'JAKARTA') + (layout.divider ? ' - With divider' : ''))} /Creator (Sweet Times Stamp) /Subject (Outlined stamp artwork) >>`,
   ];
   let pdf = '%PDF-1.4\n% Vector stamp\n';
   const offsets = [0];

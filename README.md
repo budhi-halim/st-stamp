@@ -10,7 +10,7 @@ A static, mobile-first gallery for Sweet Times company stamps.
 - Oval
 - Double oval
 
-All five shapes are available in four text sets, for **20 designs**:
+All five shapes are available in four text sets, each with and without a horizontal divider, for **40 designs**:
 
 | Set | Lower line |
 | --- | --- |
@@ -18,6 +18,8 @@ All five shapes are available in four text sets, for **20 designs**:
 | Hyphen (U+002D) | JAKARTA - INDONESIA |
 | En dash (U+2013) | JAKARTA – INDONESIA |
 | Em dash (U+2014) | JAKARTA — INDONESIA |
+
+The **Without divider** collection contains the original 20 designs. The **With divider** collection adds the same 20 designs with a centered horizontal line between Sweet Times and the lower caption. The line is 0.25 mm thick and 76% of the wordmark width, with equal clearance above and below in the existing 2 mm gap. Lettering, borders, dimensions, and resolution are identical between each pair. Divider filenames include `-divider-`.
 
 Every design uses **Sweet Times** in Playlist Script above the selected lower line in Outfit Semibold. The three country captions use identical glyph size and tracking so that only the actual dash changes. Lettering keeps its natural proportions when fitted to each template. Download filenames identify the text set, shape, and physical size.
 
@@ -54,4 +56,4 @@ GitHub Pages serves the root of the `gh-pages` branch. Apply future website upda
 - Playlist Script: the exact [font asset](https://stsweettimes.github.io/links/assets/fonts/Playlist%20Script.otf) used by the [Sweet Times links page](https://stsweettimes.github.io/links/). Font metadata credits Artimasa, 2016.
 - Outfit Semibold: the sans-serif family used by the same reference page; [Outfit source](https://github.com/Outfitio/Outfit-Fonts).
 
-The site distributes outlines for these fixed words, not font binaries. `scripts/build-geometry.py` records how the original font glyphs were shaped with HarfBuzz and converted into cubic paths using fontTools. `scripts/verify-exports.mjs` checks all 20 designs, exact dash characters, supplier sizes and aspect ratios, undistorted lettering, alignment, border clearance, vector independence, and physical and raster export dimensions.
+The site distributes outlines for these fixed words, not font binaries. `scripts/build-geometry.py` records how the original font glyphs were shaped with HarfBuzz and converted into cubic paths using fontTools. `scripts/verify-exports.mjs` checks all 40 designs, divider placement and unchanged original paths, exact dash characters, supplier sizes and aspect ratios, undistorted lettering, alignment, border clearance, vector independence, and physical and raster export dimensions.
