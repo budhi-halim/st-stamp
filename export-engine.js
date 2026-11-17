@@ -1,5 +1,7 @@
 /** Self-contained vector and raster exports for the two-line Sweet Times stamp. */
 
+import { DEFAULT_SIZE_IDS, getStampSize } from './stamp-sizes.js?v=store-sizes-1';
+
 const MM_TO_PT = 72 / 25.4;
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const encode = (value) => new TextEncoder().encode(value);
@@ -9,13 +11,10 @@ const pdfUnicodeString = (value) => '<FEFF' + Array.from(String(value), c => c.c
 
 // Supplier sizes are width × height. Keep the nominal size and its aspect
 // ratio together so previews, labels, and every exported artboard agree.
-export const STAMP_SPECS = Object.freeze({
-  borderless: Object.freeze({ widthMm: 43, heightMm: 17, ratio: '43:17' }),
-  rectangle: Object.freeze({ widthMm: 55, heightMm: 22, ratio: '5:2' }),
-  rounded: Object.freeze({ widthMm: 55, heightMm: 22, ratio: '5:2' }),
-  oval: Object.freeze({ widthMm: 35, heightMm: 24, ratio: '35:24' }),
-  'double-oval': Object.freeze({ widthMm: 35, heightMm: 24, ratio: '35:24' }),
-});
+export const STAMP_SPECS = Object.freeze(Object.fromEntries(Object.keys(DEFAULT_SIZE_IDS).map(variant => {
+  const { widthMm, heightMm, ratio } = getStampSize(variant);
+  return [variant, Object.freeze({ widthMm, heightMm, ratio })];
+})));
 
 // Playlist Script supplies one real weight. Its added outline is rendered as
 // vector geometry in every export; Outfit uses genuine variable-font instances.
@@ -122,7 +121,7 @@ function outlineRing(kind, x, y, width, height, thickness, radius = 0) {
 export function createLayout(geometry, {
   ink = '#171717', jakartaScale = 0.42, gapMm = 2,
   variant = 'borderless', borderMm = 0.35, locationKey = 'jakarta', divider = false,
-  weightKey = 'standard',
+  weightKey = 'standard', sizeId,
 } = {}) {
   finite(jakartaScale, 'JAKARTA width', 0.1, 1);
   finite(gapMm, 'Line gap', 0, 30);
@@ -133,7 +132,8 @@ export function createLayout(geometry, {
   if (!Object.hasOwn(STAMP_SPECS, variant)) throw new TypeError('Unsupported stamp variant.');
   if (!Object.hasOwn(WEIGHT_PROFILES, weightKey)) throw new TypeError('Unsupported lettering weight.');
   const { label: weightLabel, captionWeight, wordmarkOutlineMm } = WEIGHT_PROFILES[weightKey];
-  const { widthMm, heightMm, ratio } = STAMP_SPECS[variant];
+  const size = getStampSize(variant, sizeId);
+  const { widthMm, heightMm, ratio, stores, unconfirmedStores } = size;
   if (!['jakarta', 'hyphen', 'enDash', 'emDash'].includes(locationKey)) throw new TypeError('Unsupported caption.');
   const weightedLocations = geometry.locationWeights?.[captionWeight];
   const location = weightedLocations?.[locationKey];
@@ -220,7 +220,7 @@ export function createLayout(geometry, {
       paths.splice(1, 0, makePath('inner-border', inner, { x: paddingX + inset, y: paddingY + inset, width: outerWidth - 2 * inset, height: outerHeight - 2 * inset }));
     }
   }
-  return { widthMm, heightMm, ratio, widthPx, heightPx, ink, paths, insetFraction,
+  return { widthMm, heightMm, ratio, sizeId: size.id, stores, unconfirmedStores, widthPx, heightPx, ink, paths, insetFraction,
     marginsMm: { x: paddingX / unitsPerMm, y: paddingY / unitsPerMm },
     gapMm, jakartaScale, variant, borderMm, locationKey, locationText: location.text, divider, dividerMm,
     weightKey, weightLabel, captionWeight, wordmarkFontWeight: 400, wordmarkOutlineMm };

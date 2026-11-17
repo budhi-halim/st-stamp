@@ -1,4 +1,5 @@
-import { STAMP_SPECS, loadGeometry, createLayout, createSvg, createPdf, createRaster, rasterDimensions, downloadBlob } from './export-engine.js?v=weight-sets-1';
+import { loadGeometry, createLayout, createSvg, createPdf, createRaster, rasterDimensions, downloadBlob } from './export-engine.js?v=store-sizes-1';
+import { DEFAULT_SIZE_IDS, getStampSize, sizesForVariant, storeLabel } from './stamp-sizes.js?v=store-sizes-1';
 
 const variants = [
   { id: 'borderless', name: 'Borderless' },
@@ -27,6 +28,7 @@ const designs = collections.flatMap(collection => sets.flatMap(set => variants.m
   variant: variant.id, name: variant.name, set, collection,
 }))));
 const designsById = new Map(designs.map(design => [design.id, design]));
+const selectedSizes = new Map(designs.map(design => [design.id, DEFAULT_SIZE_IDS[design.variant]]));
 const formats = [
   ['svg', 'SVG · vector'],
   ['pdf', 'PDF · vector'],
@@ -70,8 +72,7 @@ function updateSummary() {
   document.querySelector('#settings-summary').textContent = `${inkInput.selectedOptions[0].textContent} · ${Number(pixelInput.value).toLocaleString('en-US')} px+`;
 }
 
-function filename(design, format, current) {
-  const size = STAMP_SPECS[design.variant];
+function filename(design, format, current, size) {
   const ink = { '#171717': 'black', '#193f69': 'blue', '#9b3037': 'red' }[current.ink] || current.ink.slice(1);
   const caption = design.set.key === 'jakarta' ? '' : `jakarta-indonesia-${design.set.id}-`;
   const base = `sweet-times-${caption}${design.variant}${design.collection.divider ? '-divider' : ''}-${design.collection.weightKey}-${size.widthMm}x${size.heightMm}mm-${ink}`;
@@ -81,19 +82,20 @@ function filename(design, format, current) {
   return `${base}-${pixels.width}x${pixels.height}px-${format === 'png-white' ? 'white' : 'transparent'}.png`;
 }
 
-function cacheKey(design, format, current) {
-  return [design.id, format, current.ink, current.borderMm, current.pixelWidth].join('|');
+function cacheKey(design, format, current, sizeId = selectedSizes.get(design.id)) {
+  return [design.id, sizeId, format, current.ink, current.borderMm, current.pixelWidth].join('|');
 }
 
 async function fileFor(design, format, current) {
-  const key = cacheKey(design, format, current);
+  const size = getStampSize(design.variant, selectedSizes.get(design.id));
+  const key = cacheKey(design, format, current, size.id);
   if (cache.has(key)) return cache.get(key);
-  const layout = createLayout(geometry, { ...current, variant: design.variant, locationKey: design.set.key, divider: design.collection.divider, weightKey: design.collection.weightKey });
+  const layout = createLayout(geometry, { ...current, variant: design.variant, sizeId: size.id, locationKey: design.set.key, divider: design.collection.divider, weightKey: design.collection.weightKey });
   let blob;
   if (format === 'svg') blob = new Blob([createSvg(layout)], { type: 'image/svg+xml' });
   else if (format === 'pdf') blob = new Blob([createPdf(layout)], { type: 'application/pdf' });
   else blob = await createRaster(layout, { type: format === 'jpg' ? 'jpeg' : 'png', background: format === 'png-transparent' ? 'transparent' : 'white', pixelWidth: current.pixelWidth });
-  const file = { blob, filename: filename(design, format, current) };
+  const file = { blob, filename: filename(design, format, current, size) };
   cache.set(key, file);
   return file;
 }
@@ -106,7 +108,7 @@ async function prepareSelected() {
   for (const design of designs) {
     if (ticket !== generation) return;
     const card = document.querySelector(`[data-design="${design.id}"]`);
-    const format = card.querySelector('select').value;
+    const format = card.querySelector('.format-select').value;
     try { await fileFor(design, format, current); }
     catch { /* A requested download displays the actionable error. */ }
   }
@@ -117,30 +119,44 @@ function schedulePreparation() {
   preparing = setTimeout(prepareSelected, 180);
 }
 
-function renderPreviews() {
+function renderPreviews(onlyDesign = null) {
   if (!geometry) return;
   showError('');
   const current = state();
   document.querySelector('#ink-sample').style.backgroundColor = current.ink;
   updateSummary();
   try {
-    for (const design of designs) {
-      const layout = createLayout(geometry, { ...current, variant: design.variant, locationKey: design.set.key, divider: design.collection.divider, weightKey: design.collection.weightKey });
+    for (const design of onlyDesign ? [onlyDesign] : designs) {
+      const size = getStampSize(design.variant, selectedSizes.get(design.id));
+      const layout = createLayout(geometry, { ...current, variant: design.variant, sizeId: size.id, locationKey: design.set.key, divider: design.collection.divider, weightKey: design.collection.weightKey });
       layouts.set(design.id, layout);
       const card = document.querySelector(`[data-design="${design.id}"]`);
+      card.dataset.size = size.id;
+      card.dataset.stores = size.stores.join(' ');
       // Preview and every export share the same paths and layout.
       card.querySelector('.stamp-preview').innerHTML = createSvg(layout)
         .replace(/<\?xml[^>]*>\s*/, '')
         .replace('id="stamp-title"', `id="stamp-title-${design.id}"`)
         .replace('aria-labelledby="stamp-title"', `aria-labelledby="stamp-title-${design.id}"`)
         .replace(/id="(wordmark|location|border|inner-border|divider)"/g, (_, id) => `id="${id}-${design.id}"`);
-      const size = STAMP_SPECS[design.variant];
-      card.querySelector('.dimensions').innerHTML = `<strong>${size.widthMm / 10} × ${size.heightMm / 10} cm</strong><span>${size.widthMm} × ${size.heightMm} mm · Ratio ${size.ratio}</span>`;
-      card.querySelector('.download-button').disabled = false;
+      card.querySelector('.dimensions').innerHTML = `<strong>${size.widthMm / 10} × ${size.heightMm / 10} cm</strong><span>${size.widthMm} × ${size.heightMm} mm · Ratio ${size.ratio}</span><span class="store-badge${size.stores.length === 2 ? ' shared' : ''}">${storeLabel(size)}</span>${size.unconfirmedStores?.includes('B') ? '<span class="store-note">Store B dimensions unconfirmed</span>' : ''}`;
+      card.querySelector('.stamp-preview').setAttribute('aria-label', `${design.collection.weightLabel} ${design.name} Sweet Times stamp with ${design.set.caption} below${design.collection.divider ? ', with a horizontal divider' : ''}, ${size.widthMm} by ${size.heightMm} millimetres, ${storeLabel(size)}`);
+      const button = card.querySelector('.download-button');
+      if (button.getAttribute('aria-busy') !== 'true') button.disabled = false;
     }
     cache.clear();
     schedulePreparation();
   } catch (error) { showError(error.message); }
+}
+
+function sizeControl(design) {
+  const choices = sizesForVariant(design.variant);
+  if (choices.length === 1) return '';
+  const groups = [['A B', 'Store A + Store B'], ['A', 'Store A'], ['B', 'Store B']];
+  return `<div class="size-field"><label for="size-${design.id}">Stamp size</label><div class="select-field"><select id="size-${design.id}" class="size-select" aria-label="Stamp size for ${design.collection.weightLabel} ${design.set.label} ${design.name}${design.collection.divider ? ' with divider' : ''}">${groups.map(([stores, label]) => {
+    const sizes = choices.filter(size => size.stores.join(' ') === stores);
+    return sizes.length ? `<optgroup label="${label}">${sizes.map(size => `<option value="${size.id}"${selectedSizes.get(design.id) === size.id ? ' selected' : ''}>${size.widthMm} × ${size.heightMm} mm</option>`).join('')}</optgroup>` : '';
+  }).join('')}</select></div></div>`;
 }
 
 function buildCards() {
@@ -152,6 +168,7 @@ function buildCards() {
     ${designs.filter(design => design.set === set && design.collection === collection).map(design => `
     <article class="stamp-card" data-design="${design.id}" data-variant="${design.variant}" data-location="${set.key}" data-divider="${collection.divider}" data-weight="${collection.weightKey}" aria-labelledby="title-${design.id}">
       <div class="card-header"><h4 id="title-${design.id}">${design.name}</h4><span class="card-number" aria-hidden="true">${String(designs.indexOf(design) + 1).padStart(2, '0')}</span></div>
+      ${sizeControl(design)}
       <div class="stamp-preview" role="img" aria-label="${collection.weightLabel} ${design.name} Sweet Times stamp with ${set.caption} below${collection.divider ? ', with a horizontal divider' : ''}"></div>
       <p class="dimensions"></p>
       <div class="download-area">
@@ -164,6 +181,11 @@ function buildCards() {
 
 gallery.addEventListener('change', event => {
   if (event.target.matches('.format-select')) schedulePreparation();
+  if (event.target.matches('.size-select')) {
+    const design = designsById.get(event.target.closest('.stamp-card').dataset.design);
+    selectedSizes.set(design.id, event.target.value);
+    renderPreviews(design);
+  }
 });
 
 gallery.addEventListener('click', async event => {
@@ -171,7 +193,7 @@ gallery.addEventListener('click', async event => {
   if (!button || button.disabled || !geometry) return;
   const card = button.closest('.stamp-card');
   const design = designsById.get(card.dataset.design);
-  const format = card.querySelector('select').value;
+  const format = card.querySelector('.format-select').value;
   const current = state();
   const key = cacheKey(design, format, current);
   showError('');
@@ -199,11 +221,13 @@ gallery.addEventListener('click', async event => {
 });
 
 form.addEventListener('submit', event => event.preventDefault());
-for (const input of [inkInput, borderInput]) input.addEventListener('input', renderPreviews);
+for (const input of [inkInput, borderInput]) input.addEventListener('input', () => renderPreviews());
 pixelInput.addEventListener('change', () => { updateSummary(); cache.clear(); schedulePreparation(); });
 checkerboard.addEventListener('change', () => gallery.classList.toggle('checkerboard', checkerboard.checked));
 document.querySelector('#reset').addEventListener('click', () => {
   form.reset();
+  for (const design of designs) selectedSizes.set(design.id, DEFAULT_SIZE_IDS[design.variant]);
+  for (const select of gallery.querySelectorAll('.size-select')) select.value = selectedSizes.get(select.closest('.stamp-card').dataset.design);
   gallery.classList.remove('checkerboard');
   renderPreviews();
 });
