@@ -9,11 +9,11 @@ The default `index.html` page contains **8 designs**: four relative text-size le
 | Level | Sweet Times size relative to the lower line | Cards |
 | --- | --- | --- |
 | Original | 100% of the original proportion | Standard + Bold |
-| Level 2 | 110% of the original proportion | Standard + Bold |
-| Level 3 | 120% of the original proportion | Standard + Bold |
-| Level 4 | 130% of the original proportion | Standard + Bold |
+| Level 2 | 90% of the original proportion (10% smaller) | Standard + Bold |
+| Level 3 | 80% of the original proportion (20% smaller) | Standard + Bold |
+| Level 4 | 70% of the original proportion (30% smaller) | Standard + Bold |
 
-The Original pair exactly matches the corresponding archived designs. The higher levels increase the wordmark-to-caption size ratio while fitting both lines within the same stamp canvas. Because the original wordmark nearly fills the available width, the change is mainly a smaller lower caption; the percentages describe the relationship between the lines, not a literal increase in the physical wordmark width. Lettering retains its natural proportions. The 2 mm text gap, 0.25 mm divider, and physical outline weights stay fixed.
+The Original pair exactly matches the corresponding archived designs. The next three levels make Sweet Times progressively smaller relative to JAKARTA - INDONESIA, using `wordmarkScale` values 0.9, 0.8, and 0.7. The percentages describe the relationship between the two lines. Both lines are fitted within the same stamp canvas, including cases where the lower caption is wider than the wordmark, without stretching the lettering. The 2 mm text gap, 0.25 mm divider, and physical outline weights stay fixed.
 
 `focus.js` builds the current page and identifies the level and weight in every download filename. The home page has ink, raster-resolution, and transparent-preview settings. SVG/PDF pages remain exactly 40 × 13 mm; default PNG/JPG exports remain 4,000 × 1,300 pixels.
 

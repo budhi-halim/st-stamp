@@ -1,10 +1,10 @@
-import { loadGeometry, createLayout, createSvg, createPdf, createRaster, rasterDimensions, downloadBlob } from './export-engine.js?v=focus-1';
+import { loadGeometry, createLayout, createSvg, createPdf, createRaster, rasterDimensions, downloadBlob } from './export-engine.js?v=focus-smaller-1';
 
 const levels = [
   { id: 'original', label: 'Original', wordmarkScale: 1, note: 'Original proportions.' },
-  { id: 'level-2', label: 'Level 2', wordmarkScale: 1.1, note: 'Sweet Times +10% relative to the lower line.' },
-  { id: 'level-3', label: 'Level 3', wordmarkScale: 1.2, note: 'Sweet Times +20% relative to the lower line.' },
-  { id: 'level-4', label: 'Level 4', wordmarkScale: 1.3, note: 'Sweet Times +30% relative to the lower line.' },
+  { id: 'level-2', label: 'Level 2', wordmarkScale: 0.9, note: 'Sweet Times 10% smaller relative to the lower line.' },
+  { id: 'level-3', label: 'Level 3', wordmarkScale: 0.8, note: 'Sweet Times 20% smaller relative to the lower line.' },
+  { id: 'level-4', label: 'Level 4', wordmarkScale: 0.7, note: 'Sweet Times 30% smaller relative to the lower line.' },
 ];
 const weights = [{ key: 'standard', label: 'Standard' }, { key: 'bold', label: 'Bold' }];
 const designs = levels.flatMap(level => weights.map(weight => ({ id: `${level.id}-${weight.key}`, level, weight })));

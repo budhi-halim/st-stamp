@@ -124,7 +124,7 @@ export function createLayout(geometry, {
   weightKey = 'standard', sizeId, wordmarkScale = 1,
 } = {}) {
   finite(jakartaScale, 'JAKARTA width', 0.1, 1);
-  finite(wordmarkScale, 'Sweet Times relative size', 1, 2);
+  finite(wordmarkScale, 'Sweet Times relative size', 0.5, 2);
   finite(gapMm, 'Line gap', 0, 30);
   finite(borderMm, 'Border thickness', 0.1, 2);
   if (typeof divider !== 'boolean') throw new TypeError('Divider must be enabled or disabled.');
@@ -156,12 +156,17 @@ export function createLayout(geometry, {
   // All three country captions use identical glyph size and tracking. Their
   // visible widths differ only because of the chosen dash's actual width.
   // This factor changes the wordmark-to-caption relationship, then refits both
-  // lines within the same artboard. A width-limited wordmark stays at its safe
-  // maximum while the caption becomes smaller. A factor of 1 preserves every
-  // original coordinate and physical stroke width.
+  // lines within the same artboard. The wider line determines the horizontal
+  // fit, so smaller wordmarks cannot push the caption outside the canvas.
+  // A factor of 1 preserves every original coordinate and physical stroke width.
+  const locationFitWidth = locationKey === 'jakarta' ? location.width
+    : Math.max(...['hyphen', 'enDash', 'emDash'].map(key => weightedLocations[key].width));
   const locationScalePerWidth = (locationKey === 'jakarta'
     ? jakartaScale / location.width
-    : 0.82 / Math.max(...['hyphen', 'enDash', 'emDash'].map(key => weightedLocations[key].width))) / wordmarkScale;
+    : 0.82 / locationFitWidth) / wordmarkScale;
+  // Keep country captions at the same type size across their dash variants by
+  // reserving enough width for the widest one, even when it exceeds the script.
+  const groupWidthPerScriptWidth = Math.max(1, locationFitWidth * locationScalePerWidth);
   const wordmarkAspect = geometry.wordmark.height / geometry.wordmark.width;
   const textHeightPerWidth = wordmarkAspect + location.height * locationScalePerWidth;
   const gap = gapMm * unitsPerMm;
@@ -176,14 +181,15 @@ export function createLayout(geometry, {
   let scriptWidth;
   if (isOval) {
     // Fit the whole two-line bounding rectangle inside an inset ellipse.
-    // (w / safeWidth)^2 + ((heightPerWidth * w + heightOffset) / safeHeight)^2 = 1.
+    // (groupWidthPerScriptWidth * w / safeWidth)^2
+    //   + ((heightPerWidth * w + heightOffset) / safeHeight)^2 = 1.
     // This also keeps the text corners clear of the curved inner frame.
-    const a = 1 / safeWidth ** 2 + textHeightPerWidth ** 2 / safeHeight ** 2;
+    const a = groupWidthPerScriptWidth ** 2 / safeWidth ** 2 + textHeightPerWidth ** 2 / safeHeight ** 2;
     const b = 2 * textHeightPerWidth * heightOffset / safeHeight ** 2;
     const c = heightOffset ** 2 / safeHeight ** 2 - 1;
     scriptWidth = (-b + Math.sqrt(b * b - 4 * a * c)) / (2 * a);
   } else {
-    scriptWidth = Math.min(safeWidth, (safeHeight - heightOffset) / textHeightPerWidth);
+    scriptWidth = Math.min(safeWidth / groupWidthPerScriptWidth, (safeHeight - heightOffset) / textHeightPerWidth);
   }
   if (scriptWidth <= strokeWidth) throw new RangeError('The lettering cannot fit within this stamp size.');
   const wordWidth = scriptWidth - strokeWidth;
@@ -232,7 +238,8 @@ export function createLayout(geometry, {
 }
 
 function proportionTitle(layout, separator) {
-  return layout.wordmarkScale > 1 ? `${separator}Sweet Times relative size ${number(layout.wordmarkScale * 100)}%` : '';
+  return Number.isFinite(layout.wordmarkScale) && layout.wordmarkScale !== 1
+    ? `${separator}Sweet Times relative size ${number(layout.wordmarkScale * 100)}%` : '';
 }
 
 export function createSvg(layout, { background = 'transparent' } = {}) {
