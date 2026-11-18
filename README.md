@@ -10,7 +10,7 @@ A static, mobile-first gallery for Sweet Times company stamps.
 - Oval
 - Double oval
 
-All five shapes are available in four text sets, two lettering weights, and with or without a horizontal divider, for **80 base designs**. Rectangular designs have a size menu rather than repeating every size as another gallery card:
+All five shapes are available in four text sets, two lettering weights, and with or without a horizontal divider, for **80 base designs**. Rectangular base designs have a size menu. A separate **40 × 13 mm set** adds **48 fixed-size cards**, bringing the gallery to **128 cards**:
 
 | Set | Lower line |
 | --- | --- |
@@ -19,9 +19,15 @@ All five shapes are available in four text sets, two lettering weights, and with
 | En dash (U+2013) | JAKARTA – INDONESIA |
 | Em dash (U+2014) | JAKARTA — INDONESIA |
 
-Each lettering weight has **Without divider** and **With divider** collections of 20 designs each. The divider is a centered horizontal line between Sweet Times and the lower caption. It is 0.25 mm thick and 76% of the visible wordmark width, with equal clearance above and below in the 2 mm gap. Lettering, borders, dimensions, and resolution are identical between each pair. Download filenames identify both the weight and the divider option.
+Each lettering weight has **Without divider** and **With divider** base collections of 20 designs each. The fixed-size set adds 12 cards to each weight/divider combination. The divider is a centered horizontal line between Sweet Times and the lower caption. It is 0.25 mm thick and 76% of the visible wordmark width, with equal clearance above and below in the 2 mm gap. Lettering, borders, dimensions, and resolution are identical between each pair. Download filenames identify both the weight and the divider option.
 
 Every design uses **Sweet Times** in Playlist Script above the selected lower line in Outfit. The three country captions use identical glyph size and tracking within each weight profile so that only the actual dash changes. Lettering keeps its natural proportions when fitted to each template. Download filenames also identify the text set, shape, and physical size.
+
+### 13 × 40 mm supplier size
+
+The requested supplier size is 13 mm high × 40 mm wide. The gallery consistently displays this as **40 × 13 mm (width × height)**, or **4 × 1.3 cm**, with the exact **40:13** ratio. It is listed by **Store B**.
+
+The dedicated set is at `?store=b-only#size-40x13` and includes borderless, rectangle, and rounded rectangle styles, all four captions, both weights, and both divider options: **3 × 4 × 2 × 2 = 48 cards**. These cards have fixed dimensions and no size menu. Reset keeps them at 40 × 13 mm. SVG/PDF artboards are exactly that size; default PNG/JPG exports are 4,000 × 1,300 pixels. The existing 80 cards and their IDs remain unchanged.
 
 ## Font weights
 
@@ -29,10 +35,10 @@ The referenced Playlist Script OTF contains one static weight, **400**, with no 
 
 Outfit supports a genuine variable weight axis from **100 to 900**, as recorded in [Google Fonts metadata](https://github.com/google/fonts/blob/main/ofl/outfit/METADATA.pb). The previous captions used 600. The updated standard set uses 650 for a slight increase, and the new bold set uses 700.
 
-| Profile | Sweet Times | Lower caption | Designs |
+| Profile | Sweet Times | Lower caption | Gallery cards |
 | --- | --- | --- | --- |
-| Standard | Playlist Script 400 + 0.06 mm outline | Native Outfit 650 | 40 |
-| Bold | Playlist Script 400 + 0.18 mm outline | Native Outfit 700 Bold | 40 |
+| Standard | Playlist Script 400 + 0.06 mm outline | Native Outfit 650 | 64 |
+| Bold | Playlist Script 400 + 0.18 mm outline | Native Outfit 700 Bold | 64 |
 
 The outline values are full stroke widths: the added ink extends half that distance on each side of the original contour. Only the script lettering receives this stroke. The layout includes the full ink bounds when fitting the text and positioning the divider. Borders and divider thicknesses are independent of the font weight.
 
@@ -54,7 +60,7 @@ The existing default sizes remain unchanged:
 
 The first three shapes can use every confirmed rectangle size below, for every caption, weight, and divider option. Changing a card's size refits its actual lettering and border, updates its dimensions and store label, and uses that same size for all downloads. Each card keeps its own selection. Reset restores the original default sizes. The five base shapes and 80 existing card IDs remain intact; the full size menu provides **992 valid shape/size/caption/weight/divider combinations**.
 
-The visible **Size availability** filter offers **All sizes**, **Both stores**, **Store A only**, and **Store B only**. These choices refer to exact sizes listed in the supplied charts. Each view restricts the size menus and shows only compatible cards; when a current size is excluded, the replacement uses the closest proportion to that design's original default. The Store B view exposes its 13 exclusive rectangle sizes directly, across all 48 rectangular base designs. It also explicitly lists Store B's two oval models as awaiting printable dimensions. Reset returns to All sizes and restores the original dimensions. The `store` URL parameter makes filtered views shareable (`?store=b-only`, `?store=a-only`, or `?store=shared`).
+The visible **Size availability** filter offers **All sizes**, **Both stores**, **Store A only**, and **Store B only**. These choices refer to exact sizes listed in the supplied charts. Each view restricts the size menus and shows only compatible cards; when a current base-card size is excluded, the replacement uses the closest proportion to that design's original default. The Store B view exposes its 13 exclusive rectangle sizes across 48 rectangular base designs, plus all 48 fixed-size cards. It also explicitly lists Store B's two oval models as awaiting printable dimensions. Visible totals are All: **128**, Both stores: **48**, Store A only: **80**, Store B only: **96**. The fixed-size group and its headings hide together when excluded. Reset returns to All sizes, restores original base dimensions, and retains 40 × 13 mm for the dedicated cards. The `store` URL parameter makes filtered views shareable (`?store=b-only`, `?store=a-only`, or `?store=shared`).
 
 `stamp-sizes.js` is the canonical catalogue. It contains 20 rectangle sizes: **6 shared, 1 listed only by A, and 13 listed only by B**. All 13 additional B sizes have aspect ratios different from A's rectangles. Nearby ratios such as 55:22 and 67:27 are not treated as equal.
 

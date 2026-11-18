@@ -14,21 +14,37 @@ const sets = [
   { id: 'en-dash', key: 'enDash', label: 'En dash', caption: 'JAKARTA – INDONESIA' },
   { id: 'em-dash', key: 'emDash', label: 'Em dash', caption: 'JAKARTA — INDONESIA' },
 ];
-const collections = [
+const baseCollections = [
   { id: 'without-divider', label: 'Standard · Without divider', weightKey: 'standard', weightLabel: 'Standard', divider: false },
   { id: 'with-divider', label: 'Standard · With divider', weightKey: 'standard', weightLabel: 'Standard', divider: true },
   { id: 'bold-without-divider', label: 'Bold · Without divider', weightKey: 'bold', weightLabel: 'Bold', divider: false },
   { id: 'bold-with-divider', label: 'Bold · With divider', weightKey: 'bold', weightLabel: 'Bold', divider: true },
 ];
+const fixedSizeLabel = '40 × 13 mm';
+const fixedCollections = baseCollections.map(collection => ({
+  ...collection,
+  id: `size-40x13-${collection.id}`,
+  fixedSizeId: 'rect-40x13',
+}));
+const collections = [...baseCollections, ...fixedCollections];
 function collectionPrefix(collection) {
-  return `${collection.weightKey === 'bold' ? 'bold-' : ''}${collection.divider ? 'divider-' : ''}`;
+  return `${collection.fixedSizeId ? 'size-40x13-' : ''}${collection.weightKey === 'bold' ? 'bold-' : ''}${collection.divider ? 'divider-' : ''}`;
 }
-const designs = collections.flatMap(collection => sets.flatMap(set => variants.map(variant => ({
+function collectionVariants(collection) {
+  return collection.fixedSizeId ? variants.filter(variant => ['borderless', 'rectangle', 'rounded'].includes(variant.id)) : variants;
+}
+function defaultSizeId(design) {
+  return design.collection.fixedSizeId || DEFAULT_SIZE_IDS[design.variant];
+}
+function fixedSizeSuffix(design) {
+  return design.collection.fixedSizeId ? ` ${fixedSizeLabel}` : '';
+}
+const designs = collections.flatMap(collection => sets.flatMap(set => collectionVariants(collection).map(variant => ({
   id: `${collectionPrefix(collection)}${set.id}-${variant.id}`,
   variant: variant.id, name: variant.name, set, collection,
 }))));
 const designsById = new Map(designs.map(design => [design.id, design]));
-const selectedSizes = new Map(designs.map(design => [design.id, DEFAULT_SIZE_IDS[design.variant]]));
+const selectedSizes = new Map(designs.map(design => [design.id, defaultSizeId(design)]));
 const formats = [
   ['svg', 'SVG · vector'],
   ['pdf', 'PDF · vector'],
@@ -78,7 +94,8 @@ function updateSummary() {
 }
 
 function availableSizes(design) {
-  return sizesForVariant(design.variant).filter(size => {
+  const choices = design.collection.fixedSizeId ? [getStampSize(design.variant, design.collection.fixedSizeId)] : sizesForVariant(design.variant);
+  return choices.filter(size => {
     if (availabilityInput.value === 'shared') return size.stores.length === 2;
     if (availabilityInput.value === 'a-only') return size.stores.length === 1 && size.stores[0] === 'A';
     if (availabilityInput.value === 'b-only') return size.stores.length === 1 && size.stores[0] === 'B';
@@ -87,7 +104,7 @@ function availableSizes(design) {
 }
 
 function preferredSize(design, choices) {
-  const original = getStampSize(design.variant, DEFAULT_SIZE_IDS[design.variant]);
+  const original = getStampSize(design.variant, defaultSizeId(design));
   const ratio = original.widthMm / original.heightMm;
   const area = original.widthMm * original.heightMm;
   return [...choices].sort((a, b) =>
@@ -118,6 +135,7 @@ function applyAvailability() {
   for (const collection of collections) {
     document.querySelector(`#${collection.id} > span`).textContent = `${counts.get(collection.id)} designs`;
   }
+  document.querySelector('#size-40x13').hidden = !fixedCollections.some(collection => counts.get(collection.id) > 0);
   const descriptions = {
     all: '20 rectangle sizes and 1 confirmed oval size.',
     shared: '6 rectangle sizes listed by both stores.',
@@ -220,27 +238,37 @@ function sizeOptions(design, choices) {
 }
 
 function sizeControl(design) {
-  if (sizesForVariant(design.variant).length === 1) return '';
+  if (design.collection.fixedSizeId || sizesForVariant(design.variant).length === 1) return '';
   return `<div class="size-field"><label for="size-${design.id}">Stamp size</label><div class="select-field"><select id="size-${design.id}" class="size-select" aria-label="Stamp size for ${design.collection.weightLabel} ${design.set.label} ${design.name}${design.collection.divider ? ' with divider' : ''}">${sizeOptions(design, availableSizes(design))}</select></div></div>`;
 }
 
-function buildCards() {
-  gallery.innerHTML = collections.map(collection => `
-    <header class="collection-header" id="${collection.id}"><h2>${collection.label}</h2><span>${sets.length * variants.length} designs</span></header>
-    <nav class="set-navigation" aria-label="${collection.label} text sets">${sets.map(set => `<a href="#set-${collectionPrefix(collection)}${set.id}">${set.key === 'jakarta' ? 'JAKARTA' : `${set.label} (${set.caption.split(' ')[1]})`}</a>`).join('')}</nav>
+function collectionMarkup(collection) {
+  const heading = collection.fixedSizeId ? 3 : 2;
+  return `
+    <header class="collection-header" id="${collection.id}"><h${heading}>${collection.label}</h${heading}><span>${sets.length * collectionVariants(collection).length} designs</span></header>
+    <nav class="set-navigation" aria-label="${collection.fixedSizeId ? `${fixedSizeLabel} · ` : ''}${collection.label} text sets">${sets.map(set => `<a href="#set-${collectionPrefix(collection)}${set.id}">${set.key === 'jakarta' ? 'JAKARTA' : `${set.label} (${set.caption.split(' ')[1]})`}</a>`).join('')}</nav>
     ${sets.map(set => `
-    <header class="set-header" id="set-${collectionPrefix(collection)}${set.id}"><h3>${set.caption}</h3>${set.key === 'jakarta' ? '' : `<span>${set.label}</span>`}</header>
+    <header class="set-header" id="set-${collectionPrefix(collection)}${set.id}"><h${heading + 1}>${set.caption}</h${heading + 1}>${set.key === 'jakarta' ? '' : `<span>${set.label}</span>`}</header>
     ${designs.filter(design => design.set === set && design.collection === collection).map(design => `
     <article class="stamp-card" data-design="${design.id}" data-variant="${design.variant}" data-location="${set.key}" data-divider="${collection.divider}" data-weight="${collection.weightKey}" aria-labelledby="title-${design.id}">
-      <div class="card-header"><h4 id="title-${design.id}">${design.name}</h4><span class="card-number" aria-hidden="true">${String(designs.indexOf(design) + 1).padStart(2, '0')}</span></div>
+      <div class="card-header"><h${heading + 2} id="title-${design.id}">${design.name}</h${heading + 2}><span class="card-number" aria-hidden="true">${String(designs.indexOf(design) + 1).padStart(2, '0')}</span></div>
       ${sizeControl(design)}
       <div class="stamp-preview" role="img" aria-label="${collection.weightLabel} ${design.name} Sweet Times stamp with ${set.caption} below${collection.divider ? ', with a horizontal divider' : ''}"></div>
       <p class="dimensions"></p>
       <div class="download-area">
-        <div class="select-field"><label class="visually-hidden" for="format-${design.id}">Download format for ${collection.weightLabel} ${set.label} ${design.name}${collection.divider ? ' with divider' : ''}</label><select id="format-${design.id}" class="format-select">${formats.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
-        <button type="button" class="download-button" aria-label="Download ${collection.weightLabel} ${set.label} ${design.name}${collection.divider ? ' with divider' : ''} stamp">${downloadIcon}<span>Download</span></button>
+        <div class="select-field"><label class="visually-hidden" for="format-${design.id}">Download format for ${collection.weightLabel} ${set.label} ${design.name}${collection.divider ? ' with divider' : ''}${fixedSizeSuffix(design)}</label><select id="format-${design.id}" class="format-select">${formats.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
+        <button type="button" class="download-button" aria-label="Download ${collection.weightLabel} ${set.label} ${design.name}${collection.divider ? ' with divider' : ''}${fixedSizeSuffix(design)} stamp">${downloadIcon}<span>Download</span></button>
       </div>
-    </article>`).join('')}`).join('')}`).join('');
+    </article>`).join('')}`).join('')}`;
+}
+
+function buildCards() {
+  gallery.innerHTML = `${baseCollections.map(collectionMarkup).join('')}
+    <section class="fixed-size-group" id="size-40x13" aria-labelledby="size-40x13-title">
+      <header class="size-group-header"><div><h2 id="size-40x13-title">${fixedSizeLabel}</h2><p>Width × height · Ratio 40:13</p></div><div class="size-group-meta"><span class="store-badge">Store B</span><span>48 designs</span></div></header>
+      <nav class="collection-navigation" aria-label="${fixedSizeLabel} collections">${fixedCollections.map(collection => `<a href="#${collection.id}"><strong>${collection.weightLabel}</strong><span>${collection.divider ? 'With divider' : 'Without divider'}</span></a>`).join('')}</nav>
+      ${fixedCollections.map(collectionMarkup).join('')}
+    </section>`;
   gallery.setAttribute('aria-busy', 'false');
 }
 
@@ -293,7 +321,7 @@ checkerboard.addEventListener('change', () => gallery.classList.toggle('checkerb
 document.querySelector('#reset').addEventListener('click', () => {
   form.reset();
   availabilityInput.value = 'all';
-  for (const design of designs) selectedSizes.set(design.id, DEFAULT_SIZE_IDS[design.variant]);
+  for (const design of designs) selectedSizes.set(design.id, defaultSizeId(design));
   gallery.classList.remove('checkerboard');
   applyAvailability();
 });
