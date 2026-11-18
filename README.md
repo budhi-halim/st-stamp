@@ -1,21 +1,28 @@
 # Sweet Times stamps
 
-A static, mobile-first gallery for Sweet Times company stamps. The home page opens the current eight-design comparison. All 128 earlier cards are available through the **Archive** button at `archive.html`.
+A static, mobile-first gallery for Sweet Times company stamps. The home page opens the current comparison of 16 designs. All 128 earlier cards are available through the **Archive** button at `archive.html`.
 
 ## Current designs
 
-The default `index.html` page contains **8 designs**: four relative text-size levels, each in Standard and Bold. Every card uses **borderless**, a horizontal divider, the literal caption **JAKARTA - INDONESIA** (U+002D hyphen), and the fixed **40 × 13 mm** Store B size.
+The default `index.html` page contains **16 designs**: two divider sets, each with four relative text-size levels in Standard and Bold. Every card uses **borderless**, a horizontal divider, the literal caption **JAKARTA - INDONESIA** (U+002D hyphen), and the fixed **40 × 13 mm** Store B size.
 
-| Level | Sweet Times size relative to the lower line | Cards |
+| Set | Divider width | Cards |
+| --- | --- | --- |
+| Original divider | 76% of the visible Sweet Times width | 8 |
+| Divider matches shorter text | Full visible width of whichever text line is shorter | 8 |
+
+The new set is at `#shorter-text-divider`. Its divider uses the smaller of the wordmark's visible ink width (including its outline) and the actual caption width. For these designs, JAKARTA - INDONESIA is shorter at Original and Levels 2–3; Sweet Times is shorter at Level 4. The rule remains centered and 0.25 mm thick, with the same vertical placement. Each new card otherwise has the same lettering and layout as its original-divider counterpart. The existing eight card IDs and level anchors remain available.
+
+| Level | Sweet Times size relative to the lower line | Weights in each set |
 | --- | --- | --- |
 | Original | 100% of the original proportion | Standard + Bold |
 | Level 2 | 90% of the original proportion (10% smaller) | Standard + Bold |
 | Level 3 | 80% of the original proportion (20% smaller) | Standard + Bold |
 | Level 4 | 70% of the original proportion (30% smaller) | Standard + Bold |
 
-The Original pair exactly matches the corresponding archived designs. The next three levels make Sweet Times progressively smaller relative to JAKARTA - INDONESIA, using `wordmarkScale` values 0.9, 0.8, and 0.7. The percentages describe the relationship between the two lines. Both lines are fitted within the same stamp canvas, including cases where the lower caption is wider than the wordmark, without stretching the lettering. The 2 mm text gap, 0.25 mm divider, and physical outline weights stay fixed.
+The Original pair in the Original divider set exactly matches the corresponding archived designs. The next three levels make Sweet Times progressively smaller relative to JAKARTA - INDONESIA, using `wordmarkScale` values 0.9, 0.8, and 0.7. The percentages describe the relationship between the two lines. Both lines are fitted within the same stamp canvas, including cases where the lower caption is wider than the wordmark, without stretching the lettering. The 2 mm text gap, 0.25 mm divider, and physical outline weights stay fixed.
 
-`focus.js` builds the current page and identifies the level and weight in every download filename. The home page has ink, raster-resolution, and transparent-preview settings. SVG/PDF pages remain exactly 40 × 13 mm; default PNG/JPG exports remain 4,000 × 1,300 pixels.
+`focus.js` builds the current page and identifies the divider set, level, and weight in download filenames and cache keys. Original filenames remain valid; new filenames include `shorter-text-divider`. The home page has ink, raster-resolution, and transparent-preview settings. SVG/PDF pages remain exactly 40 × 13 mm; default PNG/JPG exports remain 4,000 × 1,300 pixels.
 
 ## Archive designs
 

@@ -121,13 +121,14 @@ function outlineRing(kind, x, y, width, height, thickness, radius = 0) {
 export function createLayout(geometry, {
   ink = '#171717', jakartaScale = 0.42, gapMm = 2,
   variant = 'borderless', borderMm = 0.35, locationKey = 'jakarta', divider = false,
-  weightKey = 'standard', sizeId, wordmarkScale = 1,
+  weightKey = 'standard', sizeId, wordmarkScale = 1, dividerWidthMode = 'original',
 } = {}) {
   finite(jakartaScale, 'JAKARTA width', 0.1, 1);
   finite(wordmarkScale, 'Sweet Times relative size', 0.5, 2);
   finite(gapMm, 'Line gap', 0, 30);
   finite(borderMm, 'Border thickness', 0.1, 2);
   if (typeof divider !== 'boolean') throw new TypeError('Divider must be enabled or disabled.');
+  if (!['original', 'shorter-text'].includes(dividerWidthMode)) throw new TypeError('Unsupported divider width mode.');
   const dividerMm = divider ? 0.25 : 0;
   if (divider && gapMm <= dividerMm) throw new RangeError('The line gap must be greater than 0.25 mm for a divider.');
   if (!Object.hasOwn(STAMP_SPECS, variant)) throw new TypeError('Unsupported stamp variant.');
@@ -213,7 +214,10 @@ export function createLayout(geometry, {
   if (divider) {
     // The rule sits within the existing line gap, so neither the lettering
     // nor the frame moves. Filled geometry exports identically in all formats.
-    const width = scriptWidth * 0.76;
+    // scriptWidth includes its outline; the caption has no added stroke.
+    // Matching the shorter visible line changes only the divider endpoints.
+    const width = dividerWidthMode === 'shorter-text'
+      ? Math.min(scriptWidth, locationWidth) : scriptWidth * 0.76;
     const height = dividerMm * unitsPerMm;
     const x = (widthPx - width) / 2;
     const y = groupY + wordInkHeight + (gap - height) / 2;
@@ -233,13 +237,18 @@ export function createLayout(geometry, {
   }
   return { widthMm, heightMm, ratio, sizeId: size.id, stores, unconfirmedStores, widthPx, heightPx, ink, paths, insetFraction,
     marginsMm: { x: paddingX / unitsPerMm, y: paddingY / unitsPerMm },
-    gapMm, jakartaScale, variant, borderMm, locationKey, locationText: location.text, divider, dividerMm,
+    gapMm, jakartaScale, variant, borderMm, locationKey, locationText: location.text, divider, dividerMm, dividerWidthMode,
     weightKey, weightLabel, captionWeight, wordmarkFontWeight: 400, wordmarkOutlineMm, wordmarkScale };
 }
 
 function proportionTitle(layout, separator) {
   return Number.isFinite(layout.wordmarkScale) && layout.wordmarkScale !== 1
     ? `${separator}Sweet Times relative size ${number(layout.wordmarkScale * 100)}%` : '';
+}
+
+function dividerTitle(layout, separator) {
+  return layout.divider && layout.dividerWidthMode === 'shorter-text'
+    ? `${separator}Divider matches shorter text` : '';
 }
 
 export function createSvg(layout, { background = 'transparent' } = {}) {
@@ -250,7 +259,7 @@ export function createSvg(layout, { background = 'transparent' } = {}) {
     const stroke = strokeWidth > 0 ? ` stroke="${escapeXml(ink)}" stroke-width="${number(strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"` : '';
     return `<path id="${id}" d="${d}"${stroke}/>`;
   }).join('');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="${SVG_NS}" width="${number(widthMm)}mm" height="${number(heightMm)}mm" viewBox="0 0 ${number(widthPx)} ${number(heightPx)}" role="img" aria-labelledby="stamp-title"><title id="stamp-title">Sweet Times — ${escapeXml(layout.locationText || 'JAKARTA')} — ${escapeXml(layout.weightLabel)}${layout.divider ? ' — With divider' : ''}${proportionTitle(layout, ' — ')}</title>${rect}<g fill="${escapeXml(ink)}" fill-rule="nonzero">${pathElements}</g></svg>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="${SVG_NS}" width="${number(widthMm)}mm" height="${number(heightMm)}mm" viewBox="0 0 ${number(widthPx)} ${number(heightPx)}" role="img" aria-labelledby="stamp-title"><title id="stamp-title">Sweet Times — ${escapeXml(layout.locationText || 'JAKARTA')} — ${escapeXml(layout.weightLabel)}${layout.divider ? ' — With divider' : ''}${proportionTitle(layout, ' — ')}${dividerTitle(layout, ' — ')}</title>${rect}<g fill="${escapeXml(ink)}" fill-rule="nonzero">${pathElements}</g></svg>\n`;
 }
 
 /** A real vector PDF: absolute Bézier curves, no bitmap and no font references. */
@@ -277,7 +286,7 @@ export function createPdf(layout) {
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${number(pageWidth)} ${number(pageHeight)}] /Resources << >> /Contents 4 0 R >>`,
     `<< /Length ${encode(stream).length} >>\nstream\n${stream}endstream`,
-    `<< /Title ${pdfUnicodeString('Sweet Times - ' + (layout.locationText || 'JAKARTA') + ' - ' + layout.weightLabel + (layout.divider ? ' - With divider' : '') + proportionTitle(layout, ' - '))} /Creator (Sweet Times Stamp) /Subject (Outlined stamp artwork) >>`,
+    `<< /Title ${pdfUnicodeString('Sweet Times - ' + (layout.locationText || 'JAKARTA') + ' - ' + layout.weightLabel + (layout.divider ? ' - With divider' : '') + proportionTitle(layout, ' - ') + dividerTitle(layout, ' - '))} /Creator (Sweet Times Stamp) /Subject (Outlined stamp artwork) >>`,
   ];
   let pdf = '%PDF-1.4\n% Vector stamp\n';
   const offsets = [0];

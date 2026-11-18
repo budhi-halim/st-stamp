@@ -1,4 +1,4 @@
-import { loadGeometry, createLayout, createSvg, createPdf, createRaster, rasterDimensions, downloadBlob } from './export-engine.js?v=focus-smaller-1';
+import { loadGeometry, createLayout, createSvg, createPdf, createRaster, rasterDimensions, downloadBlob } from './export-engine.js?v=shorter-divider-1';
 
 const levels = [
   { id: 'original', label: 'Original', wordmarkScale: 1, note: 'Original proportions.' },
@@ -7,7 +7,11 @@ const levels = [
   { id: 'level-4', label: 'Level 4', wordmarkScale: 0.7, note: 'Sweet Times 30% smaller relative to the lower line.' },
 ];
 const weights = [{ key: 'standard', label: 'Standard' }, { key: 'bold', label: 'Bold' }];
-const designs = levels.flatMap(level => weights.map(weight => ({ id: `${level.id}-${weight.key}`, level, weight })));
+const dividerSets = [
+  { id: 'original-divider', label: 'Original divider', mode: 'original', prefix: '', note: 'Divider at 76% of the Sweet Times width.' },
+  { id: 'shorter-text-divider', label: 'Divider matches shorter text', mode: 'shorter-text', prefix: 'shorter-text-', note: 'Full width of whichever text line is shorter.' },
+];
+const designs = dividerSets.flatMap(dividerSet => levels.flatMap(level => weights.map(weight => ({ id: `${dividerSet.prefix}${level.id}-${weight.key}`, level, weight, dividerSet }))));
 const designsById = new Map(designs.map(design => [design.id, design]));
 const fixedOptions = Object.freeze({ variant: 'borderless', sizeId: 'rect-40x13', locationKey: 'hyphen', divider: true });
 const fixedSize = Object.freeze({ widthMm: 40, heightMm: 13 });
@@ -31,7 +35,11 @@ function state() {
 }
 
 function optionsFor(design, current) {
-  return { ...current, ...fixedOptions, weightKey: design.weight.key, wordmarkScale: design.level.wordmarkScale };
+  return { ...current, ...fixedOptions, weightKey: design.weight.key, wordmarkScale: design.level.wordmarkScale, dividerWidthMode: design.dividerSet.mode };
+}
+
+function dividerSuffix(design) {
+  return design.dividerSet.mode === 'shorter-text' ? ' · Divider matches shorter text' : '';
 }
 
 function flash(message) {
@@ -53,7 +61,8 @@ function updateSummary() {
 function filename(design, format, current) {
   const ink = { '#171717': 'black', '#193f69': 'blue', '#9b3037': 'red' }[current.ink] || current.ink.slice(1);
   const proportion = `relative-${Math.round(design.level.wordmarkScale * 100)}`;
-  const base = `sweet-times-jakarta-indonesia-hyphen-borderless-divider-${design.id}-${proportion}-40x13mm-${ink}`;
+  const dividerName = design.dividerSet.mode === 'shorter-text' ? 'shorter-text-divider' : 'divider';
+  const base = `sweet-times-jakarta-indonesia-hyphen-borderless-${dividerName}-${design.level.id}-${design.weight.key}-${proportion}-40x13mm-${ink}`;
   if (format === 'svg' || format === 'pdf') return `${base}.${format}`;
   const pixels = rasterDimensions(fixedSize, current.pixelWidth);
   if (format === 'jpg') return `${base}-${pixels.width}x${pixels.height}px-white.jpg`;
@@ -61,7 +70,7 @@ function filename(design, format, current) {
 }
 
 function cacheKey(design, format, current) {
-  return [design.id, design.level.wordmarkScale, design.weight.key, fixedOptions.sizeId, format, current.ink, current.pixelWidth].join('|');
+  return [design.id, design.dividerSet.mode, design.level.wordmarkScale, design.weight.key, fixedOptions.sizeId, format, current.ink, current.pixelWidth].join('|');
 }
 
 async function fileFor(design, format, current) {
@@ -123,20 +132,25 @@ function renderPreviews() {
 }
 
 function buildCards() {
-  gallery.innerHTML = levels.map(level => `
-    <section class="focus-level" id="${level.id}" aria-labelledby="heading-${level.id}">
-      <header class="focus-level-header"><h2 id="heading-${level.id}">${level.label}</h2><p>${level.note}</p></header>
-      <div class="focus-pair">${designs.filter(design => design.level === level).map(design => `
-        <article class="stamp-card" data-design="${design.id}" data-variant="borderless" data-location="hyphen" data-divider="true" data-size="rect-40x13" data-weight="${design.weight.key}" data-wordmark-scale="${level.wordmarkScale}" aria-labelledby="title-${design.id}">
-          <div class="card-header"><h3 id="title-${design.id}">${design.weight.label}</h3><span class="card-number" aria-hidden="true">${String(designs.indexOf(design) + 1).padStart(2, '0')}</span></div>
-          <div class="stamp-preview" role="img" aria-label="${level.label}, ${design.weight.label} Sweet Times stamp, JAKARTA - INDONESIA, borderless with divider, 40 by 13 millimetres"></div>
+  gallery.innerHTML = dividerSets.map(dividerSet => `
+    <section class="focus-divider-set" id="${dividerSet.id}" aria-labelledby="heading-${dividerSet.id}">
+      <header class="focus-divider-header"><div><h2 id="heading-${dividerSet.id}">${dividerSet.label}</h2><p>${dividerSet.note}</p></div><span>8 designs</span></header>
+      <nav class="collection-navigation focus-navigation" aria-label="${dividerSet.label} text size levels">${levels.map(level => `<a href="#${dividerSet.prefix}${level.id}"><strong>${level.label}</strong><span>${level.wordmarkScale === 1 ? 'Standard + Bold' : `${Math.round((1 - level.wordmarkScale) * 100)}% smaller`}</span></a>`).join('')}</nav>
+      ${levels.map(level => `
+    <section class="focus-level" id="${dividerSet.prefix}${level.id}" aria-labelledby="heading-${dividerSet.prefix}${level.id}">
+      <header class="focus-level-header"><h3 id="heading-${dividerSet.prefix}${level.id}">${level.label}</h3><p>${level.note}</p></header>
+      <div class="focus-pair">${designs.filter(design => design.level === level && design.dividerSet === dividerSet).map(design => `
+        <article class="stamp-card" data-design="${design.id}" data-variant="borderless" data-location="hyphen" data-divider="true" data-divider-width-mode="${dividerSet.mode}" data-size="rect-40x13" data-weight="${design.weight.key}" data-wordmark-scale="${level.wordmarkScale}" aria-labelledby="title-${design.id}">
+          <div class="card-header"><h4 id="title-${design.id}">${design.weight.label}</h4><span class="card-number" aria-hidden="true">${String(designs.indexOf(design) + 1).padStart(2, '0')}</span></div>
+          <div class="stamp-preview" role="img" aria-label="${level.label}, ${design.weight.label} Sweet Times stamp, JAKARTA - INDONESIA, borderless with divider, 40 by 13 millimetres${dividerSuffix(design)}"></div>
           <p class="dimensions"><strong>40 × 13 mm</strong><span>4 × 1.3 cm · Ratio 40:13</span></p>
           <div class="download-area">
-            <div class="select-field"><label class="visually-hidden" for="format-${design.id}">Download format for ${level.label} ${design.weight.label} 40 × 13 mm</label><select id="format-${design.id}" class="format-select">${formats.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
-            <button type="button" class="download-button" disabled aria-label="Download ${level.label} ${design.weight.label} 40 × 13 mm stamp">${downloadIcon}<span>Download</span></button>
+            <div class="select-field"><label class="visually-hidden" for="format-${design.id}">Download format for ${level.label} ${design.weight.label} 40 × 13 mm${dividerSuffix(design)}</label><select id="format-${design.id}" class="format-select">${formats.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
+            <button type="button" class="download-button" disabled aria-label="Download ${level.label} ${design.weight.label} 40 × 13 mm${dividerSuffix(design)} stamp">${downloadIcon}<span>Download</span></button>
           </div>
         </article>`).join('')}
       </div>
+    </section>`).join('')}
     </section>`).join('');
   gallery.setAttribute('aria-busy', 'false');
 }
@@ -153,7 +167,7 @@ gallery.addEventListener('click', async event => {
   const format = card.querySelector('.format-select').value;
   const current = state();
   const key = cacheKey(design, format, current);
-  const message = `${design.level.label} · ${design.weight.label} · ${formats.find(([value]) => value === format)[1]}`;
+  const message = `${design.dividerSet.label} · ${design.level.label} · ${design.weight.label} · ${formats.find(([value]) => value === format)[1]}`;
   showError('');
   // Cached files download synchronously in the original tap event.
   if (cache.has(key)) {
