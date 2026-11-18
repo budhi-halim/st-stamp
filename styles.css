@@ -2,8 +2,8 @@
 *,*::before,*::after{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;min-width:280px}
 button,input,select{font:inherit;color:inherit}
-button,select,summary,.set-navigation a,.collection-navigation a,.fixed-size-link,label.preview-toggle,.stamp-preview{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
-button,select,summary,.set-navigation a,.collection-navigation a,.fixed-size-link,input[type="checkbox"]{touch-action:manipulation}
+button,select,summary,.set-navigation a,.collection-navigation a,.fixed-size-link,.page-link,label.preview-toggle,.stamp-preview{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+button,select,summary,.set-navigation a,.collection-navigation a,.fixed-size-link,.page-link,input[type="checkbox"]{touch-action:manipulation}
 input[type="number"]{-webkit-user-select:text;user-select:text}
 button{cursor:pointer}
 button:disabled{cursor:wait;opacity:.65}
@@ -11,7 +11,10 @@ button:focus:not(:focus-visible),select:focus:not(:focus-visible),input:focus:no
 :focus-visible{outline:2px solid var(--focus);outline-offset:4px}
 ::selection{background:#d9e3dc;color:#15251c}
 main{width:min(100% - 32px,1180px);margin:auto;padding:24px 0 32px}
-.page-header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px;min-height:42px}
+.page-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 16px;margin-bottom:22px;min-height:42px}
+.page-actions{display:flex;align-items:center;gap:8px;margin-left:auto}
+.page-link{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px;border:1px solid #cbd9ce;border-radius:8px;background:#eef4ef;color:var(--accent);font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap}
+.page-link:active{background:#e2ece4}
 h1{font-size:22px;letter-spacing:-.65px;font-weight:650;line-height:1.2;margin:0}
 h1 span{color:var(--muted);font-weight:400;margin-left:7px}
 .reset-button{min-height:40px;min-width:62px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--muted);font-size:13px;font-weight:550;padding:8px 12px}

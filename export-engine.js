@@ -121,9 +121,10 @@ function outlineRing(kind, x, y, width, height, thickness, radius = 0) {
 export function createLayout(geometry, {
   ink = '#171717', jakartaScale = 0.42, gapMm = 2,
   variant = 'borderless', borderMm = 0.35, locationKey = 'jakarta', divider = false,
-  weightKey = 'standard', sizeId,
+  weightKey = 'standard', sizeId, wordmarkScale = 1,
 } = {}) {
   finite(jakartaScale, 'JAKARTA width', 0.1, 1);
+  finite(wordmarkScale, 'Sweet Times relative size', 1, 2);
   finite(gapMm, 'Line gap', 0, 30);
   finite(borderMm, 'Border thickness', 0.1, 2);
   if (typeof divider !== 'boolean') throw new TypeError('Divider must be enabled or disabled.');
@@ -154,9 +155,13 @@ export function createLayout(geometry, {
   const isOval = variant === 'oval' || variant === 'double-oval';
   // All three country captions use identical glyph size and tracking. Their
   // visible widths differ only because of the chosen dash's actual width.
-  const locationScalePerWidth = locationKey === 'jakarta'
+  // This factor changes the wordmark-to-caption relationship, then refits both
+  // lines within the same artboard. A width-limited wordmark stays at its safe
+  // maximum while the caption becomes smaller. A factor of 1 preserves every
+  // original coordinate and physical stroke width.
+  const locationScalePerWidth = (locationKey === 'jakarta'
     ? jakartaScale / location.width
-    : 0.82 / Math.max(...['hyphen', 'enDash', 'emDash'].map(key => weightedLocations[key].width));
+    : 0.82 / Math.max(...['hyphen', 'enDash', 'emDash'].map(key => weightedLocations[key].width))) / wordmarkScale;
   const wordmarkAspect = geometry.wordmark.height / geometry.wordmark.width;
   const textHeightPerWidth = wordmarkAspect + location.height * locationScalePerWidth;
   const gap = gapMm * unitsPerMm;
@@ -223,7 +228,11 @@ export function createLayout(geometry, {
   return { widthMm, heightMm, ratio, sizeId: size.id, stores, unconfirmedStores, widthPx, heightPx, ink, paths, insetFraction,
     marginsMm: { x: paddingX / unitsPerMm, y: paddingY / unitsPerMm },
     gapMm, jakartaScale, variant, borderMm, locationKey, locationText: location.text, divider, dividerMm,
-    weightKey, weightLabel, captionWeight, wordmarkFontWeight: 400, wordmarkOutlineMm };
+    weightKey, weightLabel, captionWeight, wordmarkFontWeight: 400, wordmarkOutlineMm, wordmarkScale };
+}
+
+function proportionTitle(layout, separator) {
+  return layout.wordmarkScale > 1 ? `${separator}Sweet Times relative size ${number(layout.wordmarkScale * 100)}%` : '';
 }
 
 export function createSvg(layout, { background = 'transparent' } = {}) {
@@ -234,7 +243,7 @@ export function createSvg(layout, { background = 'transparent' } = {}) {
     const stroke = strokeWidth > 0 ? ` stroke="${escapeXml(ink)}" stroke-width="${number(strokeWidth)}" stroke-linejoin="round" stroke-linecap="round"` : '';
     return `<path id="${id}" d="${d}"${stroke}/>`;
   }).join('');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="${SVG_NS}" width="${number(widthMm)}mm" height="${number(heightMm)}mm" viewBox="0 0 ${number(widthPx)} ${number(heightPx)}" role="img" aria-labelledby="stamp-title"><title id="stamp-title">Sweet Times — ${escapeXml(layout.locationText || 'JAKARTA')} — ${escapeXml(layout.weightLabel)}${layout.divider ? ' — With divider' : ''}</title>${rect}<g fill="${escapeXml(ink)}" fill-rule="nonzero">${pathElements}</g></svg>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="${SVG_NS}" width="${number(widthMm)}mm" height="${number(heightMm)}mm" viewBox="0 0 ${number(widthPx)} ${number(heightPx)}" role="img" aria-labelledby="stamp-title"><title id="stamp-title">Sweet Times — ${escapeXml(layout.locationText || 'JAKARTA')} — ${escapeXml(layout.weightLabel)}${layout.divider ? ' — With divider' : ''}${proportionTitle(layout, ' — ')}</title>${rect}<g fill="${escapeXml(ink)}" fill-rule="nonzero">${pathElements}</g></svg>\n`;
 }
 
 /** A real vector PDF: absolute Bézier curves, no bitmap and no font references. */
@@ -261,7 +270,7 @@ export function createPdf(layout) {
     '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${number(pageWidth)} ${number(pageHeight)}] /Resources << >> /Contents 4 0 R >>`,
     `<< /Length ${encode(stream).length} >>\nstream\n${stream}endstream`,
-    `<< /Title ${pdfUnicodeString('Sweet Times - ' + (layout.locationText || 'JAKARTA') + ' - ' + layout.weightLabel + (layout.divider ? ' - With divider' : ''))} /Creator (Sweet Times Stamp) /Subject (Outlined stamp artwork) >>`,
+    `<< /Title ${pdfUnicodeString('Sweet Times - ' + (layout.locationText || 'JAKARTA') + ' - ' + layout.weightLabel + (layout.divider ? ' - With divider' : '') + proportionTitle(layout, ' - '))} /Creator (Sweet Times Stamp) /Subject (Outlined stamp artwork) >>`,
   ];
   let pdf = '%PDF-1.4\n% Vector stamp\n';
   const offsets = [0];

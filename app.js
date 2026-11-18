@@ -1,4 +1,4 @@
-import { loadGeometry, createLayout, createSvg, createPdf, createRaster, rasterDimensions, downloadBlob } from './export-engine.js?v=store-sizes-1';
+import { loadGeometry, createLayout, createSvg, createPdf, createRaster, rasterDimensions, downloadBlob } from './export-engine.js?v=focus-1';
 import { DEFAULT_SIZE_IDS, getStampSize, sizesForVariant, storeLabel } from './stamp-sizes.js?v=store-sizes-1';
 
 const variants = [

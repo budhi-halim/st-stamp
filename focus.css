@@ -1,0 +1,27 @@
+.focus-page{max-width:960px}
+.focus-page .page-header{gap:14px}
+.focus-page .page-header .page-link{flex:none}
+.focus-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 22px}
+.focus-summary p{font-size:12px;line-height:1.6;margin:0;color:var(--muted)}
+.focus-summary strong{display:block;font-size:14px;font-weight:600;letter-spacing:.3px;line-height:1.5;margin:5px 0}
+.focus-summary .store-badge{flex:none;margin:0}
+.focus-page .settings{grid-template-columns:repeat(2,minmax(0,1fr))}
+.focus-page .settings-bottom{flex-wrap:wrap}
+.focus-page .settings-bottom>p{flex:1 1 100%}
+.focus-page .settings-bottom .reset-button{margin-left:auto}
+.focus-navigation{max-width:none;margin-bottom:12px}
+.focus-note{font-size:12px;line-height:1.6;color:var(--muted);margin:0 0 26px}
+.focus-gallery{display:block}
+.focus-level{scroll-margin-top:24px;margin-top:34px;padding-top:26px;border-top:1px solid var(--line)}
+.focus-level:first-child{margin-top:0;padding-top:0;border-top:0}
+.focus-level-header{margin-bottom:16px}
+.focus-level-header h2{font-size:18px;font-weight:600;letter-spacing:-.2px;line-height:1.4;margin:0}
+.focus-level-header p{font-size:12px;color:var(--muted);line-height:1.6;margin:5px 0 0}
+.focus-pair{display:grid;grid-template-columns:minmax(0,1fr);gap:18px}
+.focus-page .card-header h3{font-size:14px;line-height:1.4;font-weight:600;margin:0;letter-spacing:-.1px}
+.focus-page .stamp-preview{height:190px}
+.focus-page .dimensions{padding-bottom:18px}
+.focus-page footer a{color:inherit;text-underline-offset:3px;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:manipulation}
+@media(min-width:600px){.focus-pair{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}.focus-page .stamp-preview{height:210px}.focus-level{margin-top:38px;padding-top:28px}}
+@media(min-width:1000px){.focus-pair{gap:22px}.focus-page .stamp-preview{height:225px}}
+@media(max-width:349px){.focus-page .page-header{gap:8px}.focus-summary{gap:8px}.focus-summary p{font-size:11px}.focus-summary strong{font-size:12px}.focus-page .stamp-preview{height:175px}}

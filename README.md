@@ -1,8 +1,25 @@
 # Sweet Times stamps
 
-A static, mobile-first gallery for Sweet Times company stamps.
+A static, mobile-first gallery for Sweet Times company stamps. The home page opens the current eight-design comparison. All 128 earlier cards are available through the **Archive** button at `archive.html`.
 
-## Designs
+## Current designs
+
+The default `index.html` page contains **8 designs**: four relative text-size levels, each in Standard and Bold. Every card uses **borderless**, a horizontal divider, the literal caption **JAKARTA - INDONESIA** (U+002D hyphen), and the fixed **40 × 13 mm** Store B size.
+
+| Level | Sweet Times size relative to the lower line | Cards |
+| --- | --- | --- |
+| Original | 100% of the original proportion | Standard + Bold |
+| Level 2 | 110% of the original proportion | Standard + Bold |
+| Level 3 | 120% of the original proportion | Standard + Bold |
+| Level 4 | 130% of the original proportion | Standard + Bold |
+
+The Original pair exactly matches the corresponding archived designs. The higher levels increase the wordmark-to-caption size ratio while fitting both lines within the same stamp canvas. Because the original wordmark nearly fills the available width, the change is mainly a smaller lower caption; the percentages describe the relationship between the lines, not a literal increase in the physical wordmark width. Lettering retains its natural proportions. The 2 mm text gap, 0.25 mm divider, and physical outline weights stay fixed.
+
+`focus.js` builds the current page and identifies the level and weight in every download filename. The home page has ink, raster-resolution, and transparent-preview settings. SVG/PDF pages remain exactly 40 × 13 mm; default PNG/JPG exports remain 4,000 × 1,300 pixels.
+
+## Archive designs
+
+`archive.html` uses the existing `app.js` gallery controller. Its **Current designs** button returns to the home page. All previous styles, captions, weights, dividers, size menus, store filters, and downloads remain available there:
 
 - Borderless
 - Rectangle
@@ -10,7 +27,7 @@ A static, mobile-first gallery for Sweet Times company stamps.
 - Oval
 - Double oval
 
-All five shapes are available in four text sets, two lettering weights, and with or without a horizontal divider, for **80 base designs**. Rectangular base designs have a size menu. A separate **40 × 13 mm set** adds **48 fixed-size cards**, bringing the gallery to **128 cards**:
+All five shapes are available in four text sets, two lettering weights, and with or without a horizontal divider, for **80 base designs**. Rectangular base designs have a size menu. A separate **40 × 13 mm set** adds **48 fixed-size cards**, bringing the archive to **128 cards**:
 
 | Set | Lower line |
 | --- | --- |
@@ -27,7 +44,7 @@ Every design uses **Sweet Times** in Playlist Script above the selected lower li
 
 The requested supplier size is 13 mm high × 40 mm wide. The gallery consistently displays this as **40 × 13 mm (width × height)**, or **4 × 1.3 cm**, with the exact **40:13** ratio. It is listed by **Store B**.
 
-The dedicated set is at `?store=b-only#size-40x13` and includes borderless, rectangle, and rounded rectangle styles, all four captions, both weights, and both divider options: **3 × 4 × 2 × 2 = 48 cards**. These cards have fixed dimensions and no size menu. Reset keeps them at 40 × 13 mm. SVG/PDF artboards are exactly that size; default PNG/JPG exports are 4,000 × 1,300 pixels. The existing 80 cards and their IDs remain unchanged.
+The archived dedicated set is at `archive.html?store=b-only#size-40x13` and includes borderless, rectangle, and rounded rectangle styles, all four captions, both weights, and both divider options: **3 × 4 × 2 × 2 = 48 cards**. These cards have fixed dimensions and no size menu. Reset keeps them at 40 × 13 mm. SVG/PDF artboards are exactly that size; default PNG/JPG exports are 4,000 × 1,300 pixels. The existing 80 cards and their IDs remain unchanged.
 
 ## Font weights
 
@@ -35,7 +52,7 @@ The referenced Playlist Script OTF contains one static weight, **400**, with no 
 
 Outfit supports a genuine variable weight axis from **100 to 900**, as recorded in [Google Fonts metadata](https://github.com/google/fonts/blob/main/ofl/outfit/METADATA.pb). The previous captions used 600. The updated standard set uses 650 for a slight increase, and the new bold set uses 700.
 
-| Profile | Sweet Times | Lower caption | Gallery cards |
+| Profile | Sweet Times | Lower caption | Archive cards |
 | --- | --- | --- | --- |
 | Standard | Playlist Script 400 + 0.06 mm outline | Native Outfit 650 | 64 |
 | Bold | Playlist Script 400 + 0.18 mm outline | Native Outfit 700 Bold | 64 |
@@ -48,7 +65,7 @@ The outline values are full stroke widths: the added ink extends half that dista
 
 **Store A** is the first supplier chart and **Store B** is the second. Dimensions below and on the page are **width × height in millimetres**. Store A's centimetres have been converted to millimetres; Store B's values (13, 17, 22, etc.) are interpreted as millimetres. The rectangular labels in both charts put height before width.
 
-The existing default sizes remain unchanged:
+The archived default sizes remain unchanged:
 
 | Design | Stamp size | Aspect ratio | Listed store |
 | --- | --- | --- | --- |
@@ -99,13 +116,13 @@ For completeness, A lists circle diameters 25/28/35 mm; B lists 23/28/35/40/45 m
 
 Each card supports SVG, PDF, transparent PNG, white-background PNG, and white-background JPG. SVG and PDF contain vector outlines, so recipients do not need the fonts installed.
 
-Export settings control ink color, border thickness, and PNG/JPG minimum pixel width. Physical stamp sizes come from the selected supplier template. PNG/JPG default to at least **4,000 pixels wide**, with 2,000 and 6,000 options; the width rounds up to the next whole multiple of the reduced aspect ratio so both pixel dimensions are integers and the ratio is exact. A smaller physical stamp does not automatically reduce the image resolution. The export records the corresponding physical-resolution metadata. The transparent-preview setting affects the preview only; the selected download format determines the file background.
+Export settings control ink color and PNG/JPG minimum pixel width, with a border-thickness setting also available in the archive. Physical stamp sizes come from the selected supplier template. PNG/JPG default to at least **4,000 pixels wide**, with 2,000 and 6,000 options; the width rounds up to the next whole multiple of the reduced aspect ratio so both pixel dimensions are integers and the ratio is exact. A smaller physical stamp does not automatically reduce the image resolution. The export records the corresponding physical-resolution metadata. The transparent-preview setting affects the preview only; the selected download format determines the file background.
 
 All preview rendering and file generation run in the browser. The page has no external runtime dependencies, analytics, backend, or build step. Mobile tap highlights and long-press selection are disabled for controls and previews; keyboard focus indicators remain available.
 
 ## Publishing
 
-GitHub Pages serves the root of the `gh-pages` branch. Apply future website updates to that branch.
+GitHub Pages serves the root of the `gh-pages` branch. `index.html` is the default current-design page; the archive is an explicit separate page, with no automatic redirect from the home page. Apply future website updates to that branch.
 
 ## Font sources
 
